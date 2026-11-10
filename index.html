@@ -111,12 +111,17 @@ const charged=s=>!s.deleted_from_calendar&&s.status!=='free';
 const fmtD=iso=>{const d=new Date(iso);return d.getDate()+'.'+(d.getMonth()+1)};
 const fmtT=iso=>new Date(iso).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
 
+async function all(mk){ // page past the 1000-row limit
+  const out=[];for(let i=0;;i+=1000){const {data,error}=await mk().range(i,i+999);if(error)throw error;out.push(...data);if(data.length<1000)return out}
+}
 async function loadAll(){
   const q=t=>sb.from(t).select('*');
-  const [c,s,p,k,e,t]=await Promise.all([q('clients').order('name'),q('sessions').order('start_at'),q('payments').order('paid_at',{ascending:false}),q('packages'),q('calendar_events').eq('matched',false).eq('ignored',false).order('start_at'),q('tasks').order('done').order('due',{nullsFirst:false})]);
-  const err=[c,s,p,k,e,t].find(r=>r.error);if(err)throw err.error;
-  S.clients=c.data;S.sessions=s.data;S.payments=p.data;S.packages=k.data;S.events=e.data;S.tasks=t.data;
+  const [c,s,p,k,e,t]=await Promise.all([all(()=>q('clients').order('name')),all(()=>q('sessions').order('start_at').order('id')),all(()=>q('payments').order('paid_at',{ascending:false}).order('id')),all(()=>q('packages').order('id')),all(()=>q('calendar_events').eq('matched',false).eq('ignored',false).order('start_at')),all(()=>q('tasks').order('done').order('due',{nullsFirst:false}))]);
+  S.clients=c;S.sessions=s;S.payments=p;S.packages=k;S.events=e;S.tasks=t;
 }
+async function syncNow(btn){btn.disabled=true;btn.textContent='מסנכרן…';
+  try{const {data,error}=await sb.functions.invoke('sync-calendar');if(error)throw error;await reload();}catch(e){alert('הסנכרון נכשל: '+e.message)}
+  btn.disabled=false;btn.textContent='סנכרון יומן';}
 
 /* ---------- balances ---------- */
 function ledger(ym){
@@ -248,12 +253,13 @@ function sched(){
   const active=S.clients.filter(c=>c.status==='active'&&c.calendar_aliases.length);
   const booked=new Set(ses.map(s=>s.client_id));
   const byDay={};ses.forEach(s=>{const d=new Date(s.start_at).getDay();(byDay[d]=byDay[d]||[]).push(s)});
-  $('#view').innerHTML=`<div class="bar"><button class="chip ${wk===0?'on':''}" data-w="0">השבוע</button><button class="chip ${wk===1?'on':''}" data-w="1">שבוע הבא</button><button class="chip ${wk===-1?'on':''}" data-w="-1">שבוע שעבר</button></div>
+  $('#view').innerHTML=`<div class="bar"><button class="chip ${wk===0?'on':''}" data-w="0">השבוע</button><button class="chip ${wk===1?'on':''}" data-w="1">שבוע הבא</button><button class="chip ${wk===-1?'on':''}" data-w="-1">שבוע שעבר</button><button class="btn small ghost" id="sync" style="margin-inline-start:auto">סנכרון יומן</button></div>
    <div class="kpis"><div class="kpi"><small>אימונים בשבוע</small><b>${ses.length}</b></div><div class="kpi ${active.length-booked.size?'bad':'good'}"><small>פעילים בלי אימון</small><b>${active.filter(c=>!booked.has(c.id)).length}</b></div></div>
    ${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div class="day"><h4>יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</h4><div class="card">${byDay[d].sort((a,b)=>a.start_at<b.start_at?-1:1).map(s=>`<div class="row" data-sid="${s.id}"><div class="main"><div>${esc(cById(s.client_id)?.name)}</div><small>${fmtT(s.start_at)} · ${esc(s.title||'')}</small></div><span class="tag ${s.status==='free'?'mut':''}">${STATUS[s.status]}</span></div>`).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}
    <h2>פעילים שלא שובצו</h2><div class="card">${active.filter(c=>!booked.has(c.id)).map(c=>`<div class="row" data-c="${c.id}"><div class="main"><div>${esc(c.name)}</div></div><span class="tag warn">לא שובץ</span></div>`).join('')||'<div class="empty">כולם משובצים</div>'}</div>
    ${S.events.length?`<h2>אירועים ביומן שלא שויכו</h2><div class="card">${S.events.slice(0,40).map(e=>`<div class="row" data-ev="${esc(e.event_id)}"><div class="main"><div>${esc(e.title)}</div><small>${fmtD(e.start_at)} ${fmtT(e.start_at)}</small></div><span class="tag warn">לשייך</span></div>`).join('')}</div>`:''}`;
   document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{S.wk=+b.dataset.w;sched()});
+  $('#sync').onclick=e=>syncNow(e.target);
   document.querySelectorAll('[data-sid]').forEach(r=>r.onclick=()=>sessionSheet(S.sessions.find(s=>s.id===r.dataset.sid)));
   document.querySelectorAll('[data-ev]').forEach(r=>r.onclick=()=>assignEvent(S.events.find(e=>e.event_id===r.dataset.ev)));
   bindRows();
