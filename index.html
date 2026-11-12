@@ -195,7 +195,7 @@ const I={
  tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/>'
 };
 I.cal=I.schedule;I.tax=I.acct;I.pay=I.pay;
-const ROUTES=[['cal','הכנסה לפי יומן'],['income','דיווח למס (בנק)'],['pay','גבייה'],['clients','מתאמנים'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות'],['schedule','לו״ז ושיבוץ']];
+const ROUTES=[['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות'],['schedule','לו״ז ושיבוץ']];
 const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
 let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='cal',period=null,filter='active',wk=1;
 const now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
@@ -302,7 +302,7 @@ function bind(){
   $$('[data-act]').forEach(b=>b.onclick=e=>{e.stopPropagation();ACT[b.dataset.act](b.dataset.id,b)});
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
-  $$('[data-inc]').forEach(b=>b.onclick=()=>{incF=b.dataset.inc;render()});
+  $$('[data-bi]').forEach(b=>b.onclick=()=>{bi=b.dataset.bi;render()});
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
@@ -386,17 +386,44 @@ function schedule(){
   ${S.events.length?`<div class="sec"><h3>אירועים ביומן שלא שויכו</h3><span>שייך למתאמן או סמן שזה לא אימון</span></div><div class="tbl"><table><tbody>${S.events.map(e=>`<tr class="click" data-act="event" data-id="${esc(e.event_id)}"><td class="num">${fmtD(e.start_at)} ${fmtT(e.start_at)}</td><td><div class="v">${esc(e.title)}</div></td><td><span class="chip c-warn">לשייך</span></td></tr>`).join('')}</tbody></table></div>`:''}`;
 }
 
-let incF='all';
+/* ---------- 2. tax: bank + Paybox movements only, per VAT bi-month ---------- */
+const BI=['ינו׳–פבר׳','מרץ–אפר׳','מאי–יוני','יולי–אוג׳','ספט׳–אוק׳','נוב׳–דצמ׳'];
+const biKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+Math.floor(x.getMonth()/2)};
+const BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];
+let bi=biKey(now);if(!BIS.includes(bi))bi=BIS.at(-1);
+const NOTBIZ=['loan','family','internal'];
 function income(){
-  const all=S.payments.filter(p=>mKey(p.paid_at)===period).sort((a,b)=>a.paid_at<b.paid_at?-1:a.paid_at>b.paid_at?1:0);
-  const sum=a=>a.reduce((t,p)=>t+ +p.amount,0);
-  const rep=all.filter(p=>p.reportable===true),nrep=all.filter(p=>p.reportable===false),open=all.filter(p=>p.reportable==null),q=all.filter(p=>p.invoice_status==='queued');
-  const F={all:all,rep,nrep,open,queued:q};const list=F[incF]||all;
-  const bySrc=Object.entries(rep.reduce((m,p)=>(m[p.source]=(m[p.source]||0)+ +p.amount,m),{})).map(([k,v])=>(SRC[k]||k)+' '+ils(v)).join(' · ');
-  return head('דיווח למס',`לפי תנועות בבנק ובפייבוקס בלבד (לא לפי היומן) · ${mLabel(period)}: מאיפה, האם מדווח, והאם מפיקים חשבונית`,monthSwitch())+
-  `<div class="grid kpis">${kpi('סה״כ נכנס ב'+mLabel(period),ils(sum(all)),all.length+' שורות · כולל הכול')}${kpi('מדווח',ils(sum(rep)),rep.length+' שורות · '+(bySrc||''),'ok')}${kpi('לבירור',ils(sum(open)),open.length+' שורות',open.length?'warn':'ok')}${kpi('לא מדווח',ils(sum(nrep)),nrep.length+' שורות (הלוואה, משפחה וכו׳)')}${kpi('חשבוניות להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
-  <div class="tools" style="margin-top:14px">${[['all','הכל'],['rep','מדווח'],['open','לבירור'],['nrep','לא מדווח'],['queued','להפקה']].map(([k,t])=>`<button class="btn" data-inc="${k}" aria-pressed="${incF===k}">${t} (${F[k].length})</button>`).join('')}<button class="btn pri" data-act="newPay" style="margin-inline-start:auto">+ הכנסה</button></div>${payTable(list,true)}
-  <div class="card" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><b>סה״כ ${incF==='all'?'':'('+({rep:'מדווח',open:'לבירור',nrep:'לא מדווח',queued:'להפקה'}[incF])+') '}· ${list.length} שורות</b><b class="num" style="font-size:20px">${ils(sum(list))}</b></div>`;
+  const list=S.payments.filter(p=>['mercantile','paybox'].includes(p.source)&&!NOTBIZ.includes(p.category)&&biKey(p.paid_at)===bi).sort((a,b)=>a.paid_at<b.paid_at?-1:1);
+  const sum=a=>a.reduce((t,p)=>t+ +p.amount,0),cash=list.filter(p=>p.category==='cash_unassigned'),q=list.filter(p=>p.invoice_status==='queued');
+  const sw=`<div class="months" role="group">${BIS.map(k=>`<button data-bi="${k}" aria-pressed="${bi===k}">${BI[+k.split('-')[1]]}</button>`).join('')}</div>`;
+  const doc=p=>{const d=S.docs.find(x=>x.payment_id===p.id);
+    if(p.invoice_status==='issued')return `<span class="chip c-ok">הופק${p.invoice_number?' '+esc(p.invoice_number):''}</span>${d?` <button class="btn sm" data-act="doc" data-id="${d.id}">📎</button>`:''}`;
+    if(p.invoice_status==='not_needed')return `<span class="chip c-na">לא מפיקים</span>`;
+    if(p.invoice_status==='queued')return `<span class="chip c-warn">ממתין להפקה</span>`;
+    return `<button class="btn sm pri" data-act="issue" data-id="${p.id}">הפק מסמך</button>`};
+  const row=p=>p.category==='cash_unassigned'
+    ?`<tr><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">הפקדת מזומן</div><div class="d">לשייך ללקוחות</div></td><td class="amt">${ils(p.amount)}</td><td>מזומן</td><td><button class="btn sm" data-act="split" data-id="${p.id}">שייך</button></td></tr>`
+    :`<tr class="click" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="amt">${ils(p.amount)}</td><td>${METHOD[p.method]||SRC[p.source]||''}</td><td>${doc(p)}</td></tr>`;
+  return head('דיווח למס',`תנועות בבנק ובפייבוקס בלבד · ${BI[+bi.split('-')[1]]} ${bi.split('-')[0]}`,sw)+
+  `<div class="grid kpis">${kpi('נכנס בתקופה',ils(sum(list)),list.length+' תנועות','ok')}${kpi('מזומן לשיוך',ils(sum(cash)),cash.length+' הפקדות',cash.length?'warn':'ok')}${kpi('ממתין להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
+  <div class="tbl" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>לקוח</th><th>סכום</th><th>דרך תשלום</th><th>מסמך</th></tr></thead><tbody>${list.map(row).join('')||'<tr><td colspan="5" class="empty">אין תנועות בתקופה — שלח לי את קבצי הבנק</td></tr>'}</tbody>
+  <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ</td><td class="amt">${ils(sum(list))}</td><td colspan="2"></td></tr></tfoot></table></div>`;
+}
+function splitDlg(p){
+  const opts=S.clients.filter(c=>c.status!=='lead').sort((a,b)=>a.name.localeCompare(b.name,'he')).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const line=()=>`<div class="row sp"><select class="sc" style="flex:1;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:#fff;font:inherit"><option value="">לקוח…</option>${opts}</select><input class="sa" type="number" inputmode="numeric" placeholder="סכום" style="max-width:120px;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:#fff;font:inherit"></div>`;
+  const w=dlg(`<h2>שיוך הפקדת מזומן</h2><p class="sub">${fmtD(p.paid_at)} · ${ils(p.amount)} · למשל: ג׳וני ונטלי 2000, רוני 3000</p><div id="ls">${line()}${line()}</div>
+  <p class="cap" id="left"></p><div class="row"><button class="btn" data-x="add">+ עוד לקוח</button><button class="btn pri" data-x="save">שמור</button></div>`);
+  const upd=()=>{const t=[...w.querySelectorAll('.sa')].reduce((a,i)=>a+(+i.value||0),0);w.querySelector('#left').textContent=`שויך ${ils(t)} · נשאר ${ils(p.amount-t)}`};
+  w.oninput=upd;upd();
+  w.querySelector('[data-x=add]').onclick=()=>{w.querySelector('#ls').insertAdjacentHTML('beforeend',line())};
+  w.querySelector('[data-x=save]').onclick=async()=>{
+    const L=[...w.querySelectorAll('#ls .row')].map(r=>({c:r.querySelector('.sc').value,a:+r.querySelector('.sa').value||0})).filter(x=>x.c&&x.a>0);
+    const t=L.reduce((a,x)=>a+x.a,0);if(!L.length)return toast('לא נבחר לקוח');if(t>+p.amount)return toast('יותר מסכום ההפקדה');
+    await db(SB.from('payments').insert(L.map(x=>({client_id:x.c,amount:x.a,paid_at:p.paid_at,method:'cash',source:p.source,category:'trainee',reportable:true,invoice_status:'none',counterparty:cById(x.c).name,notes:'מהפקדת מזומן '+fmtD(p.paid_at)}))));
+    const rest=+p.amount-t;
+    await db(rest>0?SB.from('payments').update({amount:rest}).eq('id',p.id):SB.from('payments').delete().eq('id',p.id),'שויך');
+    w.remove();reload()};
 }
 
 function expenses(){
@@ -561,7 +588,7 @@ async function openDoc(id){const d=S.docs.find(x=>x.id===id);const w=window.open
 const ACT={
   newPay:()=>payDlg(null),paid:async id=>{const r=tillToday().find(x=>x.payer.id===id);if(cById(id).not_yet_at)await SB.from('clients').update({not_yet_at:null}).eq('id',id);payDlg(null,id,r?.open)},
   notYet:async id=>{await db(SB.from('clients').update({not_yet_at:new Date().toISOString().slice(0,10)}).eq('id',id),'סומן: עוד לא');reload()},
-  clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),
+  clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{await db(SB.from('payments').update({invoice_status:'queued'}).eq('id',id),'נכנס לתור הפקה');reload()},
   bill:id=>{const t=billText(id);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('ההודעה הועתקה — מדביקים בוואטסאפ'),()=>dlg(`<h2>הודעת חיוב</h2><textarea class="f" rows="10">${esc(t)}</textarea>`))},
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
