@@ -393,7 +393,7 @@ const BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];
 let bi=biKey(now);if(!BIS.includes(bi))bi=BIS.at(-1);
 const NOTBIZ=['loan','family','internal'];
 function income(){
-  const list=S.payments.filter(p=>['mercantile','paybox'].includes(p.source)&&!NOTBIZ.includes(p.category)&&biKey(p.paid_at)===bi).sort((a,b)=>a.paid_at<b.paid_at?-1:1);
+  const list=S.payments.filter(p=>['mercantile','paybox','shay'].includes(p.source)&&!NOTBIZ.includes(p.category)&&biKey(p.paid_at)===bi).sort((a,b)=>a.paid_at<b.paid_at?-1:1);
   const sum=a=>a.reduce((t,p)=>t+ +p.amount,0),cash=list.filter(p=>p.category==='cash_unassigned'),q=list.filter(p=>p.invoice_status==='queued');
   const sw=`<div class="months" role="group">${BIS.map(k=>`<button data-bi="${k}" aria-pressed="${bi===k}">${BI[+k.split('-')[1]]}</button>`).join('')}</div>`;
   const doc=p=>{const d=S.docs.find(x=>x.payment_id===p.id);
@@ -404,7 +404,7 @@ function income(){
   const row=p=>p.category==='cash_unassigned'
     ?`<tr><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">הפקדת מזומן</div><div class="d">לשייך ללקוחות</div></td><td class="amt">${ils(p.amount)}</td><td>מזומן</td><td><button class="btn sm" data-act="split" data-id="${p.id}">שייך</button></td></tr>`
     :`<tr class="click" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="amt">${ils(p.amount)}</td><td>${METHOD[p.method]||SRC[p.source]||''}</td><td>${doc(p)}</td></tr>`;
-  return head('דיווח למס',`תנועות בבנק ובפייבוקס בלבד · ${BI[+bi.split('-')[1]]} ${bi.split('-')[0]}`,sw)+
+  return head('דיווח למס',`תנועות בבנק, בפייבוקס ובחשבון של שי · ${BI[+bi.split('-')[1]]} ${bi.split('-')[0]}`,sw)+
   `<div class="grid kpis">${kpi('נכנס בתקופה',ils(sum(list)),list.length+' תנועות','ok')}${kpi('מזומן לשיוך',ils(sum(cash)),cash.length+' הפקדות',cash.length?'warn':'ok')}${kpi('ממתין להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
   <div class="tbl" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>לקוח</th><th>סכום</th><th>דרך תשלום</th><th>מסמך</th></tr></thead><tbody>${list.map(row).join('')||'<tr><td colspan="5" class="empty">אין תנועות בתקופה — שלח לי את קבצי הבנק</td></tr>'}</tbody>
   <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ</td><td class="amt">${ils(sum(list))}</td><td colspan="2"></td></tr></tfoot></table></div>`;
