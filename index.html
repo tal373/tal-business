@@ -194,9 +194,10 @@ const I={
  acct:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
  tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/>'
 };
-const ROUTES=[['overview','סקירה'],['pay','תשלומים'],['clients','מתאמנים'],['schedule','לו״ז ושיבוץ'],['income','הכנסות'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
-const ico=k=>`<svg viewBox="0 0 24 24">${I[k]}</svg>`;
-let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[]},route='overview',period=null,filter='active',wk=1;
+I.cal=I.schedule;I.tax=I.acct;I.pay=I.pay;
+const ROUTES=[['cal','הכנסה לפי יומן'],['income','דיווח למס (בנק)'],['pay','גבייה'],['clients','מתאמנים'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות'],['schedule','לו״ז ושיבוץ']];
+const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
+let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='cal',period=null,filter='active',wk=1;
 const now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
 
@@ -204,6 +205,7 @@ function toast(t){const d=document.createElement('div');d.className='toast';d.te
 async function all(mk){const out=[];for(let i=0;;i+=1000){const {data,error}=await mk().range(i,i+999);if(error)throw error;out.push(...data);if(data.length<1000)return out}}
 async function load(){
   const q=t=>SB.from(t).select('*');
+  S.months=await all(()=>q('client_months').order('month'));
   const [c,s,p,x,d,e,t]=await Promise.all([all(()=>q('clients').order('name')),all(()=>q('sessions').order('start_at').order('id')),all(()=>q('payments').order('paid_at',{ascending:false}).order('id')),all(()=>q('expenses').order('spent_at',{ascending:false}).order('id')),all(()=>q('docs').order('created_at',{ascending:false})),all(()=>q('calendar_events').eq('matched',false).eq('ignored',false).order('start_at')),all(()=>q('tasks').order('done').order('due',{nullsFirst:false}))]);
   Object.assign(S,{clients:c,sessions:s,payments:p,expenses:x,docs:d,events:e,tasks:t});
 }
@@ -265,14 +267,48 @@ function nav(){
 function head(t,sub,right){return `<div class="top"><div><h1>${t}</h1>${sub?`<p>${sub}</p>`:''}</div>${right||''}</div>`}
 function monthSwitch(){return `<div class="months" role="group" aria-label="חודש">${PERIODS.map(k=>`<button data-p="${k}" aria-pressed="${period===k}">${mLabel(k)}</button>`).join('')}</div>`}
 function kpi(l,v,h,c){return `<div class="card kpi ${c||''}"><span class="l">${l}</span><span class="v">${v}</span><span class="h">${h||''}</span></div>`}
-function render(){nav();const f={overview,pay,clients,schedule,income,expenses,docs,acct,tasks}[route];$('#main').innerHTML=f();bind();}
+function render(){nav();const f={cal,overview,pay,clients,schedule,income,expenses,docs,acct,tasks}[route];$('#main').innerHTML=f();bind();}
+
+/* ---------- 1. income by calendar: the sessions Tal actually did ---------- */
+const done=s=>!s.deleted_from_calendar&&s.status!=='no_show';
+const isSettled=(cid,k)=>S.months.find(m=>m.client_id===cid&&m.month===k)?.settled;
+function termsOf(c){
+  const p=c.price?ils(c.price):'—';
+  if(c.billing==='package'&&c.package_size){const d=clientDue(c);const at=d.left!=null?c.package_size-d.left:null;return `חבילה${at!=null?` ${at} מתוך ${c.package_size}`:' של '+c.package_size} · ${p} לאימון`}
+  return `${RULE[c.billing]} · ${p} לאימון${c.payer_id?' · משלם/ת: '+cById(c.payer_id)?.name:''}`;
+}
+let calAll=false;
+function cal(){
+  const inK=s=>calAll?new Date(s.start_at)>=FROM:mKey(s.start_at)===period;
+  const ses=S.sessions.filter(s=>inK(s)&&done(s)&&new Date(s.start_at)<=now);
+  const by={};ses.forEach(s=>{(by[s.client_id]=by[s.client_id]||[]).push(s)});
+  const rows=Object.entries(by).map(([cid,l])=>({c:cById(cid),l,amt:l.reduce((a,s)=>a+ +s.price,0)})).filter(r=>r.c).sort((a,b)=>b.amt-a.amt);
+  const tot=rows.reduce((a,r)=>a+r.amt,0),n=ses.length,st=calAll?0:rows.filter(r=>isSettled(r.c.id,period)).length;
+  const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-p="${k}" aria-pressed="${!calAll&&period===k}">${mLabel(k)}</button>`).join('')}<button data-calall="1" aria-pressed="${calAll}">הכל</button></div>`;
+  return head('הכנסה לפי יומן',`האימונים שעשית — זה מה שקובע את ההכנסה${calAll?'':' · '+mLabel(period)+(mKey(now)===period?' עד היום':'')}`,sw)+
+  `<div class="grid kpis">${kpi('הכנסה לפי יומן',ils(tot),n+' אימונים','ok')}${kpi('מתאמנים',rows.length,'')}${calAll?'':kpi('הוסדרו',st+' / '+rows.length,'שולם והוסדר',st===rows.length?'ok':'warn')}</div>
+  <div class="tbl" style="margin-top:14px"><table><thead><tr><th>מתאמן</th><th class="hide-m">תנאים</th><th>אימונים</th><th>סכום</th>${calAll?'':'<th>שולם והוסדר</th>'}</tr></thead><tbody>${rows.map(r=>`<tr class="click" data-card="${r.c.id}"><td><div class="v">${esc(r.c.name)}</div><div class="d">${r.l.map(s=>fmtD(s.start_at)).join(' · ')}</div></td><td class="hide-m"><span class="chip c-na">${esc(termsOf(r.c))}</span></td><td class="num">${r.l.length}</td><td class="amt">${ils(r.amt)}</td>${calAll?'':`<td><button class="btn sm ${isSettled(r.c.id,period)?'pri':''}" data-settle="${r.c.id}">${isSettled(r.c.id,period)?'✓ הוסדר':'לא הוסדר'}</button></td>`}</tr>`).join('')||'<tr><td colspan="5" class="empty">אין אימונים</td></tr>'}</tbody></table></div>
+  <div class="card" style="margin-top:10px;display:flex;justify-content:space-between"><b>סה״כ · ${n} אימונים</b><b class="num" style="font-size:20px">${ils(tot)}</b></div>`;
+}
+async function toggleSettle(cid,k){const v=!isSettled(cid,k);await db(SB.from('client_months').upsert({client_id:cid,month:k,settled:v,updated_at:new Date().toISOString()}),v?'סומן: הוסדר':'סומן: לא הוסדר');reload()}
+function cardDlg(c){
+  const months=[...new Set(S.sessions.filter(s=>s.client_id===c.id&&done(s)&&new Date(s.start_at)>=FROM&&new Date(s.start_at)<=now).map(s=>mKey(s.start_at)))].sort();
+  const w=dlg(`<h2>${esc(c.name)}</h2><p class="sub">${esc(termsOf(c))}</p>
+  <div class="tbl"><table><thead><tr><th>חודש</th><th>אימונים</th><th>סכום</th><th>שולם והוסדר</th></tr></thead><tbody>${months.map(k=>{const l=S.sessions.filter(s=>s.client_id===c.id&&done(s)&&mKey(s.start_at)===k&&new Date(s.start_at)<=now);return `<tr><td><div class="v">${mLabel(k)}</div><div class="d">${l.map(s=>fmtD(s.start_at)+(s.status==='free'?' ('+esc((s.notes||'').split(' ')[0])+')':'')).join(' · ')}</div></td><td class="num">${l.length}</td><td class="amt">${ils(l.reduce((a,s)=>a+ +s.price,0))}</td><td><button class="btn sm ${isSettled(c.id,k)?'pri':''}" data-m="${k}">${isSettled(c.id,k)?'✓ הוסדר':'לא הוסדר'}</button></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">אין אימונים</td></tr>'}</tbody></table></div>
+  <div class="row"><button class="btn" data-x="full">כרטיס מלא ותשלומים</button></div>`);
+  w.querySelectorAll('[data-m]').forEach(b=>b.onclick=async()=>{w.remove();await toggleSettle(c.id,b.dataset.m);cardDlg(c)});
+  w.querySelector('[data-x=full]').onclick=()=>{w.remove();clientDlg(c)};
+}
 function bind(){
-  $$('[data-p]').forEach(b=>b.onclick=()=>{period=b.dataset.p;render()});
+  $$('[data-p]').forEach(b=>b.onclick=()=>{period=b.dataset.p;calAll=false;render()});
   $$('[data-client]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;clientDlg(cById(r.dataset.client))});
   $$('[data-act]').forEach(b=>b.onclick=e=>{e.stopPropagation();ACT[b.dataset.act](b.dataset.id,b)});
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
   $$('[data-inc]').forEach(b=>b.onclick=()=>{incF=b.dataset.inc;render()});
+  $$('[data-calall]').forEach(b=>b.onclick=()=>{calAll=true;render()});
+  $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
+  $$('[data-settle]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleSettle(b.dataset.settle,period)});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
   $$('input[data-task]').forEach(c=>c.onchange=()=>db(SB.from('tasks').update({done:c.checked}).eq('id',c.dataset.task)).then(reload));
@@ -319,9 +355,9 @@ function pay(){
   const L=tillToday(),tot=L.reduce((a,r)=>a+r.open,0);
   const notYet=L.filter(r=>r.payer.not_yet_at),todo=L.filter(r=>!r.payer.not_yet_at);
   const paidM=S.payments.filter(p=>mKey(p.paid_at)===period&&p.client_id&&p.category==='trainee');
-  const row=r=>`<tr class="click" data-client="${r.payer.id}"><td><div class="v">${esc(r.payer.name)}</div><div class="d">${r.unpaid.map(s=>fmtD(s.start_at)+(s.client_id!==r.payer.id?' ('+esc(cById(s.client_id).name.split(' ')[0])+')':'')).join(' · ')}</div></td><td class="num hide-m">${r.unpaid.length}</td><td class="amt bad">${ils(r.open)}</td><td style="white-space:nowrap"><button class="btn sm pri" data-act="paid" data-id="${r.payer.id}">שולם</button> ${r.payer.not_yet_at?`<span class="chip c-warn">עוד לא · ${fmtD(r.payer.not_yet_at)}</span> <button class="btn sm" data-act="clearNotYet" data-id="${r.payer.id}">↺</button>`:`<button class="btn sm" data-act="notYet" data-id="${r.payer.id}">עוד לא</button>`} <button class="btn sm" data-act="bill" data-id="${r.payer.id}">הודעה</button></td></tr>`;
+  const row=r=>`<tr class="click" data-client="${r.payer.id}"><td><div class="v">${esc(r.payer.name)}</div><div class="d"><span class="chip c-na">${esc(termsOf(r.payer))}</span></div><div class="d">${r.unpaid.map(s=>fmtD(s.start_at)+(s.client_id!==r.payer.id?' ('+esc(cById(s.client_id).name.split(' ')[0])+')':'')).join(' · ')}</div></td><td class="num hide-m">${r.unpaid.length}</td><td class="amt bad">${ils(r.open)}</td><td style="white-space:nowrap"><button class="btn sm pri" data-act="paid" data-id="${r.payer.id}">שולם</button> ${r.payer.not_yet_at?`<span class="chip c-warn">עוד לא · ${fmtD(r.payer.not_yet_at)}</span> <button class="btn sm" data-act="clearNotYet" data-id="${r.payer.id}">↺</button>`:`<button class="btn sm" data-act="notYet" data-id="${r.payer.id}">עוד לא</button>`} <button class="btn sm" data-act="bill" data-id="${r.payer.id}">הודעה</button></td></tr>`;
   const tbl=(list,empty)=>`<div class="tbl"><table><thead><tr><th>מי</th><th class="hide-m">אימונים</th><th>סכום</th><th></th></tr></thead><tbody>${list.map(row).join('')||`<tr><td colspan="4" class="empty">${empty}</td></tr>`}</tbody></table></div>`;
-  return head('תשלומים',`אימונים שהיו עד היום (${fmtD(now)}) ועוד לא שולמו`,`<button class="btn pri" data-act="newPay">+ תשלום שהתקבל</button>`)+
+  return head('גבייה',`לפי התנאים של כל מתאמן · אימונים שהיו עד היום (${fmtD(now)}) ועוד לא שולמו`,`<button class="btn pri" data-act="newPay">+ תשלום שהתקבל</button>`)+
   `<div class="grid kpis">${kpi('לא שולם עד היום',ils(tot),L.length+' משלמים',tot?'bad':'ok')}${kpi('לבדוק',todo.length,'עוד לא סימנת','warn')}${kpi('סומן "עוד לא"',notYet.length,'מחכים לתשלום')}</div>
   <div class="sec"><h3>לבדוק</h3><span>לסמן שולם או עוד לא</span></div>${tbl(todo,'הכול מסומן ✓')}
   ${notYet.length?`<div class="sec"><h3>עוד לא שילמו</h3><span>סימנת "עוד לא"</span></div>${tbl(notYet,'')}`:''}
@@ -362,7 +398,7 @@ function income(){
   const rep=all.filter(p=>p.reportable===true),nrep=all.filter(p=>p.reportable===false),open=all.filter(p=>p.reportable==null),q=all.filter(p=>p.invoice_status==='queued');
   const F={all:all,rep,nrep,open,queued:q};const list=F[incF]||all;
   const bySrc=Object.entries(rep.reduce((m,p)=>(m[p.source]=(m[p.source]||0)+ +p.amount,m),{})).map(([k,v])=>(SRC[k]||k)+' '+ils(v)).join(' · ');
-  return head('הכנסות',`כל הכסף שנכנס ב${mLabel(period)}: מאיפה, האם מדווח, והאם מפיקים חשבונית`,monthSwitch())+
+  return head('דיווח למס',`לפי תנועות בבנק ובפייבוקס בלבד (לא לפי היומן) · ${mLabel(period)}: מאיפה, האם מדווח, והאם מפיקים חשבונית`,monthSwitch())+
   `<div class="grid kpis">${kpi('סה״כ נכנס ב'+mLabel(period),ils(sum(all)),all.length+' שורות · כולל הכול')}${kpi('מדווח',ils(sum(rep)),rep.length+' שורות · '+(bySrc||''),'ok')}${kpi('לבירור',ils(sum(open)),open.length+' שורות',open.length?'warn':'ok')}${kpi('לא מדווח',ils(sum(nrep)),nrep.length+' שורות (הלוואה, משפחה וכו׳)')}${kpi('חשבוניות להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
   <div class="tools" style="margin-top:14px">${[['all','הכל'],['rep','מדווח'],['open','לבירור'],['nrep','לא מדווח'],['queued','להפקה']].map(([k,t])=>`<button class="btn" data-inc="${k}" aria-pressed="${incF===k}">${t} (${F[k].length})</button>`).join('')}<button class="btn pri" data-act="newPay" style="margin-inline-start:auto">+ הכנסה</button></div>${payTable(list,true)}
   <div class="card" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><b>סה״כ ${incF==='all'?'':'('+({rep:'מדווח',open:'לבירור',nrep:'לא מדווח',queued:'להפקה'}[incF])+') '}· ${list.length} שורות</b><b class="num" style="font-size:20px">${ils(sum(list))}</b></div>`;
@@ -544,7 +580,7 @@ const ACT={
 };
 
 /* ---------- boot ---------- */
-function go(){const h=(location.hash||'#overview').slice(1);route=ROUTES.some(r=>r[0]===h)?h:'overview';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
+function go(){const h=(location.hash||'#cal').slice(1);route=ROUTES.some(r=>r[0]===h)||h==='overview'?h:'cal';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
 $('#mMenu').onclick=()=>$('#msheet').hidden=false;$('#mClose').onclick=()=>$('#msheet').hidden=true;$('#msheet').onclick=e=>{if(e.target.id==='msheet')$('#msheet').hidden=true};
 $('#fileIn').onchange=e=>{upload([...e.target.files]);e.target.value=''};
 $('#syncBtn').onclick=e=>ACT.sync(null,e.target);
