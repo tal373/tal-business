@@ -175,7 +175,11 @@ const HM=['ינואר','פברואר','מרץ','אפריל','מאי','יוני',
 const DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 const RULE={monthly:'סוף חודש',package:'חבילה',per_session:'כל אימון',weekly:'כל שבוע',one_time:'חד פעמי'};
 const METHOD={transfer:'העברה',paybox:'פייבוקס',cash:'מזומן',bit:'ביט',other:'לא ידוע'};
-const INV={none:['אין חשבונית','c-bad'],queued:['להפקה','c-warn'],issued:['חשבונית יצאה','c-ok']};
+const INV={none:['לא הוחלט','c-na'],queued:['להפקה','c-warn'],issued:['חשבונית יצאה','c-ok'],not_needed:['לא מפיקים','c-na']};
+const SRC={mercantile:'מרכנתיל',paybox:'פייבוקס',shay:'חשבון של שי',cash:'מזומן',other:'אחר'};
+const CAT={trainee:'מתאמן',cash_unassigned:'מזומן לא משויך',playground:'פלייגראונד',family:'משפחה / פרטי',loan:'הלוואה',internal:'העברה פנימית',event:'אירוע',other:'אחר'};
+const REP={true:['מדווח','c-ok'],false:['לא מדווח','c-na'],null:['לבירור','c-warn']};
+const who=p=>cById(p.client_id)?.name||p.counterparty||'לא משויך';
 const DOCK={invoice_out:'חשבונית שהוצאתי',receipt:'קבלה',expense:'חשבונית הוצאה',bank:'דף בנק',paybox:'דוח פייבוקס',report:'דוח לרו״ח',other:'אחר'};
 const STATUS={scheduled:'מתוכנן',done:'בוצע',no_show:'לא הגיע (מחויב)',free:'לא מחויב'};
 const FROM=new Date('2026-09-01T00:00:00+03:00');
@@ -252,7 +256,7 @@ function payers(){
 
 /* ---------- shell ---------- */
 function nav(){
-  const P=payers(),openN=P.filter(r=>r.open>0).length,noInv=S.payments.filter(p=>p.invoice_status!=='issued'&&new Date(p.paid_at)>=FROM).length;
+  const P=payers(),openN=P.filter(r=>r.open>0).length,noInv=S.payments.filter(p=>p.invoice_status==='queued'||p.reportable==null).length;
   const badge={pay:openN,schedule:S.events.length,income:noInv};
   const item=([k,t])=>`<a href="#${k}" ${route===k?'aria-current="page"':''}>${ico(k==='acct'?'acct':k)}${t}${badge[k]?`<span class="badge">${badge[k]}</span>`:''}</a>`;
   $('#nav').innerHTML=ROUTES.map(item).join('');$('#mgrid').innerHTML=ROUTES.map(item).join('');
@@ -268,6 +272,7 @@ function bind(){
   $$('[data-act]').forEach(b=>b.onclick=e=>{e.stopPropagation();ACT[b.dataset.act](b.dataset.id,b)});
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
+  $$('[data-inc]').forEach(b=>b.onclick=()=>{incF=b.dataset.inc;render()});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
   $$('input[data-task]').forEach(c=>c.onchange=()=>db(SB.from('tasks').update({done:c.checked}).eq('id',c.dataset.task)).then(reload));
@@ -276,10 +281,10 @@ function bind(){
 /* ---------- screens ---------- */
 function overview(){
   const P=payers(),open=P.reduce((a,r)=>a+r.open,0),exp=P.reduce((a,r)=>a+r.expectNet,0);
-  const inM=S.payments.filter(p=>mKey(p.paid_at)===mKey(now)).reduce((a,p)=>a+ +p.amount,0);
+  const inM=S.payments.filter(p=>mKey(p.paid_at)===mKey(now)&&p.reportable!==false).reduce((a,p)=>a+ +p.amount,0);
   const mS=S.sessions.filter(s=>charged(s)&&mKey(s.start_at)===mKey(now));
   const xM=S.expenses.filter(x=>mKey(x.spent_at)===mKey(now)).reduce((a,x)=>a+ +x.amount,0);
-  const noInv=S.payments.filter(p=>p.invoice_status!=='issued'&&new Date(p.paid_at)>=FROM);
+  const noInv=S.payments.filter(p=>p.invoice_status==='queued');
   const xNoInv=S.expenses.filter(x=>x.invoice==='missing');
   const pk=P.filter(r=>r.left!=null&&r.left<=1);
   const al=[];
@@ -302,7 +307,7 @@ function overview(){
 function pay(){
   const P=payers().sort((a,b)=>b.open-a.open);
   const open=P.filter(r=>r.open>0),exp=P.filter(r=>r.expectNet>0).sort((a,b)=>b.expectNet-a.expectNet);
-  const paidM=S.payments.filter(p=>mKey(p.paid_at)===period);
+  const paidM=S.payments.filter(p=>mKey(p.paid_at)===period&&p.client_id);
   const ruleOf=r=>[...new Set(membersOf(r.payer.id).map(c=>RULE[c.billing]))].join(' · ');
   return head('תשלומים','לפי הכללים: סוף חודש נגבה ב-1 לחודש · חבילה מראש · כל אימון ביום האימון',`<button class="btn pri" data-act="newPay">+ תשלום שהתקבל</button>`)+
   `<div class="grid kpis">${kpi('פתוח עכשיו',ils(open.reduce((a,r)=>a+r.open,0)),open.length+' משלמים',open.length?'bad':'ok')}${kpi('צפוי עד ה-1',ils(exp.reduce((a,r)=>a+r.expectNet,0)),exp.length+' משלמים','warn')}${kpi('שולם מראש',ils(P.reduce((a,r)=>a+r.credit,0)),'זיכוי שמחכה לאימונים')}</div>
@@ -313,7 +318,7 @@ function pay(){
   <div class="sec"><h3>שולם · ${mLabel(period)}</h3>${monthSwitch()}</div>
   ${payTable(paidM)}`;
 }
-function payTable(list){return `<div class="tbl"><table><thead><tr><th>תאריך</th><th>מי</th><th>סכום</th><th class="hide-m">אמצעי</th><th>חשבונית</th></tr></thead><tbody>${list.map(p=>`<tr class="click" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(cById(p.client_id)?.name||'לא משויך')}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="amt ok">${ils(p.amount)}</td><td class="hide-m">${METHOD[p.method]||''}</td><td><span class="chip ${INV[p.invoice_status][1]}">${INV[p.invoice_status][0]}${p.invoice_number?' '+esc(p.invoice_number):''}</span>${S.docs.some(d=>d.payment_id===p.id)?' 📎':''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין תשלומים בחודש הזה</td></tr>'}</tbody></table></div>`}
+function payTable(list,full){return `<div class="tbl"><table><thead><tr><th>תאריך</th><th>ממי</th><th class="hide-m">מאיפה</th>${full?'<th class="hide-m">סוג</th>':''}<th>סכום</th>${full?'<th>דיווח</th>':''}<th>חשבונית</th></tr></thead><tbody>${list.map(p=>{const r=REP[String(p.reportable)]||REP.null;return `<tr class="click ${p.reportable===false?'dim':''}" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="hide-m"><span class="chip c-na">${SRC[p.source]||METHOD[p.method]||''}</span></td>${full?`<td class="hide-m">${CAT[p.category]||''}</td>`:''}<td class="amt ${p.reportable===false?'':'ok'}">${ils(p.amount)}</td>${full?`<td><span class="chip ${r[1]}">${r[0]}</span></td>`:''}<td><span class="chip ${INV[p.invoice_status][1]}">${INV[p.invoice_status][0]}${p.invoice_number?' '+esc(p.invoice_number):''}</span>${S.docs.some(d=>d.payment_id===p.id)?' 📎':''}</td></tr>`}).join('')||`<tr><td colspan="${full?7:5}" class="empty">אין תשלומים בחודש הזה</td></tr>`}</tbody></table></div>`}
 
 function clients(){
   const P=Object.fromEntries(payers().map(r=>[r.payer.id,r]));
@@ -341,11 +346,16 @@ function schedule(){
   ${S.events.length?`<div class="sec"><h3>אירועים ביומן שלא שויכו</h3><span>שייך למתאמן או סמן שזה לא אימון</span></div><div class="tbl"><table><tbody>${S.events.map(e=>`<tr class="click" data-act="event" data-id="${esc(e.event_id)}"><td class="num">${fmtD(e.start_at)} ${fmtT(e.start_at)}</td><td><div class="v">${esc(e.title)}</div></td><td><span class="chip c-warn">לשייך</span></td></tr>`).join('')}</tbody></table></div>`:''}`;
 }
 
+let incF='all';
 function income(){
-  const list=S.payments.filter(p=>mKey(p.paid_at)===period);const tot=list.reduce((a,p)=>a+ +p.amount,0);const no=list.filter(p=>p.invoice_status!=='issued');
-  return head('הכנסות',`כל תשלום שנכנס, עם חשבונית`,monthSwitch())+
-  `<div class="grid kpis">${kpi('נכנס ב'+mLabel(period),ils(tot),list.length+' תשלומים','ok')}${kpi('בלי חשבונית',no.length,ils(no.reduce((a,p)=>a+ +p.amount,0)),no.length?'bad':'ok')}${kpi('לפי אמצעי',Object.entries(list.reduce((m,p)=>(m[p.method]=(m[p.method]||0)+ +p.amount,m),{})).map(([k,v])=>METHOD[k]+' '+ils(v)).join(' · ')||'—','')}</div>
-  <div class="tools" style="margin-top:14px"><button class="btn pri" data-act="newPay">+ תשלום</button></div>${payTable(list)}`;
+  const all=S.payments.filter(p=>mKey(p.paid_at)===period).sort((a,b)=>a.paid_at<b.paid_at?-1:a.paid_at>b.paid_at?1:0);
+  const sum=a=>a.reduce((t,p)=>t+ +p.amount,0);
+  const rep=all.filter(p=>p.reportable===true),nrep=all.filter(p=>p.reportable===false),open=all.filter(p=>p.reportable==null),q=all.filter(p=>p.invoice_status==='queued');
+  const F={all:all,rep,nrep,open,queued:q};const list=F[incF]||all;
+  const bySrc=Object.entries(rep.reduce((m,p)=>(m[p.source]=(m[p.source]||0)+ +p.amount,m),{})).map(([k,v])=>(SRC[k]||k)+' '+ils(v)).join(' · ');
+  return head('הכנסות',`כל הכסף שנכנס ב${mLabel(period)}: מאיפה, האם מדווח, והאם מפיקים חשבונית`,monthSwitch())+
+  `<div class="grid kpis">${kpi('מדווח',ils(sum(rep)),rep.length+' שורות · '+(bySrc||''),'ok')}${kpi('לבירור',ils(sum(open)),open.length+' שורות',open.length?'warn':'ok')}${kpi('לא מדווח',ils(sum(nrep)),nrep.length+' שורות (הלוואה, משפחה וכו׳)')}${kpi('חשבוניות להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
+  <div class="tools" style="margin-top:14px">${[['all','הכל'],['rep','מדווח'],['open','לבירור'],['nrep','לא מדווח'],['queued','להפקה']].map(([k,t])=>`<button class="btn" data-inc="${k}" aria-pressed="${incF===k}">${t} (${F[k].length})</button>`).join('')}<button class="btn pri" data-act="newPay" style="margin-inline-start:auto">+ הכנסה</button></div>${payTable(list,true)}`;
 }
 
 function expenses(){
@@ -414,7 +424,11 @@ function payDlg(p,pid,suggest){
   const n=!p;p=p||{paid_at:new Date().toISOString().slice(0,10),method:'transfer',invoice_status:'none'};
   const w=dlg(`<h2>${n?'תשלום שהתקבל':'עריכת תשלום'}</h2><p class="sub">${n?'נרשם להכנסות של החודש':''}</p>
    <div class="form" style="background:none;border:0;padding:0">
-    <label>מי שילם<select class="f" id="cl">${S.clients.filter(c=>!c.payer_id).map(c=>`<option value="${c.id}" ${(p.client_id||pid)===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+    <label>מתאמן<select class="f" id="cl"><option value="">— לא מתאמן —</option>${S.clients.filter(c=>!c.payer_id).map(c=>`<option value="${c.id}" ${(p.client_id||pid)===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+    <label>ממי (אם לא מתאמן)<input class="f" id="cp" value="${esc(p.counterparty||'')}"></label>
+    <label>מאיפה נכנס<select class="f" id="sr">${Object.entries(SRC).map(([k,t])=>`<option value="${k}" ${(p.source||'mercantile')===k?'selected':''}>${t}</option>`).join('')}</select></label>
+    <label>סוג<select class="f" id="ct">${Object.entries(CAT).map(([k,t])=>`<option value="${k}" ${(p.category||'trainee')===k?'selected':''}>${t}</option>`).join('')}</select></label>
+    <label>דיווח<select class="f" id="rp"><option value="true" ${p.reportable===true||n?'selected':''}>מדווח</option><option value="false" ${p.reportable===false?'selected':''}>לא מדווח</option><option value="" ${p.reportable==null&&!n?'selected':''}>לבירור</option></select></label>
     <label>סכום<input class="f" id="am" type="number" inputmode="numeric" value="${p.amount??(suggest>0?Math.round(suggest):'')}"></label>
     <label>תאריך<input class="f" id="dt" type="date" value="${p.paid_at}"></label>
     <label>אמצעי<select class="f" id="mt">${Object.entries(METHOD).map(([k,t])=>`<option value="${k}" ${p.method===k?'selected':''}>${t}</option>`).join('')}</select></label>
@@ -426,7 +440,7 @@ function payDlg(p,pid,suggest){
    <div class="row"><button class="btn pri" data-x="save">שמירה</button>${n?'':'<button class="btn" data-x="del">מחיקה</button>'}</div>`);
   w.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openDoc(b.dataset.open));
   w.querySelector('[data-x=save]').onclick=async()=>{
-    const iv=val(w,'#iv');const d={client_id:val(w,'#cl'),amount:+val(w,'#am'),paid_at:val(w,'#dt'),method:val(w,'#mt'),invoice_status:iv,invoice_number:val(w,'#in')||null,invoice_date:iv==='issued'?(p.invoice_date||new Date().toISOString().slice(0,10)):null,notes:val(w,'#nt')||null};
+    const iv=val(w,'#iv');const rp=val(w,'#rp');const d={client_id:val(w,'#cl')||null,counterparty:val(w,'#cp')||null,source:val(w,'#sr'),category:val(w,'#ct'),reportable:rp===''?null:rp==='true',amount:+val(w,'#am'),paid_at:val(w,'#dt'),method:val(w,'#mt'),invoice_status:iv,invoice_number:val(w,'#in')||null,invoice_date:iv==='issued'?(p.invoice_date||new Date().toISOString().slice(0,10)):null,notes:val(w,'#nt')||null};
     if(!d.amount)return toast('חסר סכום');
     let id=p.id;if(n){const {data,error}=await SB.from('payments').insert(d).select('id').single();if(error)return toast(error.message);id=data.id}else await db(SB.from('payments').update(d).eq('id',p.id));
     const f=w.querySelector('#fl').files[0];if(f)await upload([f],{payment_id:id,kind:iv==='issued'?'invoice_out':'receipt',month:mKey(d.paid_at)});
