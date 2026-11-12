@@ -277,38 +277,33 @@ function termsOf(c){
   if(c.billing==='package'&&c.package_size){const d=clientDue(c);const at=d.left!=null?c.package_size-d.left:null;return `חבילה${at!=null?` ${at} מתוך ${c.package_size}`:' של '+c.package_size} · ${p} לאימון`}
   return `${RULE[c.billing]} · ${p} לאימון${c.payer_id?' · משלם/ת: '+cById(c.payer_id)?.name:''}`;
 }
-let calAll=false;
 function cal(){
-  const inK=s=>calAll?new Date(s.start_at)>=FROM:mKey(s.start_at)===period;
-  const ses=S.sessions.filter(s=>inK(s)&&done(s)&&new Date(s.start_at)<=now);
-  const by={};ses.forEach(s=>{(by[s.client_id]=by[s.client_id]||[]).push(s)});
-  const rows=Object.entries(by).map(([cid,l])=>({c:cById(cid),l,amt:l.reduce((a,s)=>a+ +s.price,0)})).filter(r=>r.c).sort((a,b)=>b.amt-a.amt);
-  const tot=rows.reduce((a,r)=>a+r.amt,0),n=ses.length,st=calAll?0:rows.filter(r=>isSettled(r.c.id,period)).length;
-  const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-p="${k}" aria-pressed="${!calAll&&period===k}">${mLabel(k)}</button>`).join('')}<button data-calall="1" aria-pressed="${calAll}">הכל</button></div>`;
-  return head('הכנסה לפי יומן',`האימונים שעשית — זה מה שקובע את ההכנסה${calAll?'':' · '+mLabel(period)+(mKey(now)===period?' עד היום':'')}`,sw)+
-  `<div class="grid kpis">${kpi('הכנסה לפי יומן',ils(tot),n+' אימונים','ok')}${kpi('מתאמנים',rows.length,'')}${calAll?'':kpi('הוסדרו',st+' / '+rows.length,'שולם והוסדר',st===rows.length?'ok':'warn')}</div>
-  <div class="tbl" style="margin-top:14px"><table><thead><tr><th>מתאמן</th><th class="hide-m">תנאים</th><th>אימונים</th><th>סכום</th>${calAll?'':'<th>שולם והוסדר</th>'}</tr></thead><tbody>${rows.map(r=>`<tr class="click" data-card="${r.c.id}"><td><div class="v">${esc(r.c.name)}</div><div class="d">${r.l.map(s=>fmtD(s.start_at)).join(' · ')}</div></td><td class="hide-m"><span class="chip c-na">${esc(termsOf(r.c))}</span></td><td class="num">${r.l.length}</td><td class="amt">${ils(r.amt)}</td>${calAll?'':`<td><button class="btn sm ${isSettled(r.c.id,period)?'pri':''}" data-settle="${r.c.id}">${isSettled(r.c.id,period)?'✓ הוסדר':'לא הוסדר'}</button></td>`}</tr>`).join('')||'<tr><td colspan="5" class="empty">אין אימונים</td></tr>'}</tbody></table></div>
-  <div class="card" style="margin-top:10px;display:flex;justify-content:space-between"><b>סה״כ · ${n} אימונים</b><b class="num" style="font-size:20px">${ils(tot)}</b></div>`;
+  const ks=PERIODS.filter(k=>k<=mKey(now));
+  const ses=S.sessions.filter(s=>done(s)&&new Date(s.start_at)<=now&&ks.includes(mKey(s.start_at)));
+  const g={};ses.forEach(s=>{const m=(g[s.client_id]=g[s.client_id]||{});const x=(m[mKey(s.start_at)]=m[mKey(s.start_at)]||{n:0,a:0});x.n++;x.a+=+s.price||0});
+  const rows=Object.entries(g).map(([cid,m])=>({c:cById(cid),m,n:Object.values(m).reduce((t,x)=>t+x.n,0),a:Object.values(m).reduce((t,x)=>t+x.a,0)})).filter(r=>r.c).sort((a,b)=>a.c.name.localeCompare(b.c.name,'he'));
+  const tot=k=>rows.reduce((t,r)=>({n:t.n+(r.m[k]?.n||0),a:t.a+(r.m[k]?.a||0)}),{n:0,a:0});
+  const cell=x=>x?`<td class="amt"><div>${ils(x.a)}</div><div class="d">${x.n} אימונים</div></td>`:'<td class="amt d">—</td>';
+  const all=rows.reduce((t,r)=>({n:t.n+r.n,a:t.a+r.a}),{n:0,a:0});
+  return head('הכנסה לפי יומן',`כמה אימונים כל מתאמן עשה בכל חודש ובאיזה שווי — ישירות מיומן גוגל${mKey(now)===ks.at(-1)?' (החודש הנוכחי עד היום)':''}`)+
+  `<div class="tbl"><table><thead><tr><th>מתאמן</th>${ks.map(k=>`<th style="text-align:left">${mLabel(k)}</th>`).join('')}<th style="text-align:left">סה״כ</th></tr></thead><tbody>${rows.map(r=>`<tr class="click" data-card="${r.c.id}"><td><div class="v">${esc(r.c.name)}</div></td>${ks.map(k=>cell(r.m[k])).join('')}${cell({n:r.n,a:r.a})}</tr>`).join('')||`<tr><td colspan="${ks.length+2}" class="empty">אין אימונים</td></tr>`}</tbody>
+  <tfoot><tr style="font-weight:700;background:var(--surface)"><td>סה״כ</td>${ks.map(k=>cell(tot(k))).join('')}${cell(all)}</tr></tfoot></table></div>`;
 }
-async function toggleSettle(cid,k){const v=!isSettled(cid,k);await db(SB.from('client_months').upsert({client_id:cid,month:k,settled:v,updated_at:new Date().toISOString()}),v?'סומן: הוסדר':'סומן: לא הוסדר');reload()}
 function cardDlg(c){
-  const months=[...new Set(S.sessions.filter(s=>s.client_id===c.id&&done(s)&&new Date(s.start_at)>=FROM&&new Date(s.start_at)<=now).map(s=>mKey(s.start_at)))].sort();
-  const w=dlg(`<h2>${esc(c.name)}</h2><p class="sub">${esc(termsOf(c))}</p>
-  <div class="tbl"><table><thead><tr><th>חודש</th><th>אימונים</th><th>סכום</th><th>שולם והוסדר</th></tr></thead><tbody>${months.map(k=>{const l=S.sessions.filter(s=>s.client_id===c.id&&done(s)&&mKey(s.start_at)===k&&new Date(s.start_at)<=now);return `<tr><td><div class="v">${mLabel(k)}</div><div class="d">${l.map(s=>fmtD(s.start_at)+(s.status==='free'?' ('+esc((s.notes||'').split(' ')[0])+')':'')).join(' · ')}</div></td><td class="num">${l.length}</td><td class="amt">${ils(l.reduce((a,s)=>a+ +s.price,0))}</td><td><button class="btn sm ${isSettled(c.id,k)?'pri':''}" data-m="${k}">${isSettled(c.id,k)?'✓ הוסדר':'לא הוסדר'}</button></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">אין אימונים</td></tr>'}</tbody></table></div>
-  <div class="row"><button class="btn" data-x="full">כרטיס מלא ותשלומים</button></div>`);
-  w.querySelectorAll('[data-m]').forEach(b=>b.onclick=async()=>{w.remove();await toggleSettle(c.id,b.dataset.m);cardDlg(c)});
-  w.querySelector('[data-x=full]').onclick=()=>{w.remove();clientDlg(c)};
+  const ks=PERIODS.filter(k=>k<=mKey(now));
+  const w=dlg(`<h2>${esc(c.name)}</h2><p class="sub">אימונים לפי יומן גוגל</p>
+  <div class="tbl"><table><thead><tr><th>חודש</th><th>תאריכים</th><th>אימונים</th><th>שווי</th></tr></thead><tbody>${ks.map(k=>{const l=S.sessions.filter(s=>s.client_id===c.id&&done(s)&&mKey(s.start_at)===k&&new Date(s.start_at)<=now).sort((a,b)=>a.start_at<b.start_at?-1:1);return l.length?`<tr><td class="v">${mLabel(k)}</td><td class="d">${l.map(s=>fmtD(s.start_at)).join(' · ')}</td><td class="num">${l.length}</td><td class="amt">${ils(l.reduce((a,s)=>a+ +s.price,0))}</td></tr>`:''}).join('')}</tbody></table></div>
+  <div class="row"><button class="btn" data-x="close">סגירה</button></div>`);
+  w.querySelector('[data-x=close]').onclick=()=>w.remove();
 }
 function bind(){
-  $$('[data-p]').forEach(b=>b.onclick=()=>{period=b.dataset.p;calAll=false;render()});
+  $$('[data-p]').forEach(b=>b.onclick=()=>{period=b.dataset.p;render()});
   $$('[data-client]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;clientDlg(cById(r.dataset.client))});
   $$('[data-act]').forEach(b=>b.onclick=e=>{e.stopPropagation();ACT[b.dataset.act](b.dataset.id,b)});
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
   $$('[data-inc]').forEach(b=>b.onclick=()=>{incF=b.dataset.inc;render()});
-  $$('[data-calall]').forEach(b=>b.onclick=()=>{calAll=true;render()});
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
-  $$('[data-settle]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleSettle(b.dataset.settle,period)});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
   $$('input[data-task]').forEach(c=>c.onchange=()=>db(SB.from('tasks').update({done:c.checked}).eq('id',c.dataset.task)).then(reload));
