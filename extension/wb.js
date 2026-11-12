@@ -23,7 +23,7 @@
   D.addEventListener('tb-clear', () => set({ job: null }));
   await sleep(1500);
   D.documentElement.dataset.tbJob = JSON.stringify(job);
-  const s = D.createElement('script');
+  const s = document.createElement('script');
   s.src = 'https://tal373.github.io/tal-business/wbfill.js?t=' + Date.now();
-  D.documentElement.appendChild(s);
+  document.documentElement.appendChild(s); // must be the loader's own page, or Chrome won't run it
 })();

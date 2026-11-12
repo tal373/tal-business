@@ -1,7 +1,17 @@
 // Page-world filler loaded by the extension into WeBenefit. Fills a tax invoice-receipt from the job sent by the business app.
 // SAFETY: it never presses "שמור" on the invoice itself — only on the product-line and payment sub-screens.
 window.__TB_RUN = async () => {
-  const D = document, sleep = ms => new Promise(r => setTimeout(r, ms));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // works whether loaded in the top page or inside the app frame
+  const findDoc = () => {
+    if (document.querySelector('#navigatorMetro')) return document;
+    for (const f of document.querySelectorAll('iframe')) { try { if (f.contentDocument && f.contentDocument.querySelector('#navigatorMetro')) return f.contentDocument; } catch (e) {} }
+    return null;
+  };
+  let D = null;
+  for (let i = 0; i < 80 && !(D = findDoc()); i++) await sleep(250);
+  if (!D) return;
+  const window = D.defaultView;
   const N = D.querySelector('#navigatorMetro');
   let job = window.__TB_JOB;
   for (let i = 0; i < 20 && !job; i++) { try { job = JSON.parse(D.documentElement.dataset.tbJob || 'null'); } catch (e) {} if (!job) await sleep(250); }
