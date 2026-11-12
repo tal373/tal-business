@@ -18,7 +18,7 @@ window.__TB_RUN = async () => {
   delete D.documentElement.dataset.tbJob;
   if (!N || !job || window.__TB_RUNNING) return;
   window.__TB_RUNNING = true;
-  const emit = (n, o) => D.dispatchEvent(new CustomEvent(n, { detail: JSON.stringify(o || {}) }));
+  const emit = (n, o) => D.dispatchEvent(new window.CustomEvent(n, { detail: JSON.stringify(o || {}) }));
 
   // ---------- banner ----------
   const bar = D.createElement('div');
@@ -114,7 +114,8 @@ window.__TB_RUN = async () => {
       rd.click(); await sleep(700);
       if (!/כולל מע/.test(top().innerText)) throw new Error('vat');
     }
-    const price = [...top().querySelectorAll('input')].filter(i => vis(i) && i.type !== 'search' && !isNaN(parseFloat(i.value)))[0];
+    const price = [...top().querySelectorAll('input')].filter(i => vis(i) && i.type !== 'search' && i.type !== 'radio')[0];
+    if (!price) throw new Error('no price field');
     setVal(price, String(job.amount)); await sleep(400);
     await subSave();
 
