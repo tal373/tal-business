@@ -363,8 +363,9 @@ function income(){
   const F={all:all,rep,nrep,open,queued:q};const list=F[incF]||all;
   const bySrc=Object.entries(rep.reduce((m,p)=>(m[p.source]=(m[p.source]||0)+ +p.amount,m),{})).map(([k,v])=>(SRC[k]||k)+' '+ils(v)).join(' · ');
   return head('הכנסות',`כל הכסף שנכנס ב${mLabel(period)}: מאיפה, האם מדווח, והאם מפיקים חשבונית`,monthSwitch())+
-  `<div class="grid kpis">${kpi('מדווח',ils(sum(rep)),rep.length+' שורות · '+(bySrc||''),'ok')}${kpi('לבירור',ils(sum(open)),open.length+' שורות',open.length?'warn':'ok')}${kpi('לא מדווח',ils(sum(nrep)),nrep.length+' שורות (הלוואה, משפחה וכו׳)')}${kpi('חשבוניות להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
-  <div class="tools" style="margin-top:14px">${[['all','הכל'],['rep','מדווח'],['open','לבירור'],['nrep','לא מדווח'],['queued','להפקה']].map(([k,t])=>`<button class="btn" data-inc="${k}" aria-pressed="${incF===k}">${t} (${F[k].length})</button>`).join('')}<button class="btn pri" data-act="newPay" style="margin-inline-start:auto">+ הכנסה</button></div>${payTable(list,true)}`;
+  `<div class="grid kpis">${kpi('סה״כ נכנס ב'+mLabel(period),ils(sum(all)),all.length+' שורות · כולל הכול')}${kpi('מדווח',ils(sum(rep)),rep.length+' שורות · '+(bySrc||''),'ok')}${kpi('לבירור',ils(sum(open)),open.length+' שורות',open.length?'warn':'ok')}${kpi('לא מדווח',ils(sum(nrep)),nrep.length+' שורות (הלוואה, משפחה וכו׳)')}${kpi('חשבוניות להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
+  <div class="tools" style="margin-top:14px">${[['all','הכל'],['rep','מדווח'],['open','לבירור'],['nrep','לא מדווח'],['queued','להפקה']].map(([k,t])=>`<button class="btn" data-inc="${k}" aria-pressed="${incF===k}">${t} (${F[k].length})</button>`).join('')}<button class="btn pri" data-act="newPay" style="margin-inline-start:auto">+ הכנסה</button></div>${payTable(list,true)}
+  <div class="card" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><b>סה״כ ${incF==='all'?'':'('+({rep:'מדווח',open:'לבירור',nrep:'לא מדווח',queued:'להפקה'}[incF])+') '}· ${list.length} שורות</b><b class="num" style="font-size:20px">${ils(sum(list))}</b></div>`;
 }
 
 function expenses(){
