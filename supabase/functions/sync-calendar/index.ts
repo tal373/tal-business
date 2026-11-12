@@ -121,6 +121,7 @@ Deno.serve(async (req) => {
       if (error) throw error; existing.push(...data!); if (data!.length < 1000) break;
     }
     const have = new Map((existing || []).map((s) => [s.event_id + "|" + s.client_id, s]));
+    const evHas = new Set((existing || []).map((s) => s.event_id)); // event already assigned (maybe moved by hand) -> never re-create
     const { data: ignoredRows } = await sb.from("calendar_events").select("event_id").eq("ignored", true);
     const ignored = new Set((ignoredRows || []).map((r) => r.event_id));
 
@@ -138,6 +139,7 @@ Deno.serve(async (req) => {
       evRows.push({ ...e, matched: matches.length > 0, ignored: ignored.has(e.event_id), synced_at: new Date().toISOString() });
       for (const m of matches) {
         const old = have.get(e.event_id + "|" + m.c.id);
+        if (!old && evHas.has(e.event_id)) continue;
         if (!old) newSessions.push({ event_id: e.event_id, client_id: m.c.id, start_at: e.start_at, title: e.title, price: m.price, status: Date.parse(e.start_at) < now ? "done" : "scheduled" });
         else if (Date.parse(old.start_at) !== Date.parse(e.start_at) || old.title !== e.title || old.deleted_from_calendar) changed.push({ id: old.id, start_at: e.start_at, title: e.title });
       }
