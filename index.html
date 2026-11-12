@@ -303,6 +303,7 @@ function bind(){
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
   $$('[data-bi]').forEach(b=>b.onclick=()=>{bi=b.dataset.bi;render()});
+  $$('select[data-svc]').forEach(x=>x.onchange=async()=>{const p=S.payments.find(y=>y.id===x.dataset.svc);p.service=x.value;await db(SB.from('payments').update({service:x.value}).eq('id',p.id),'נשמר: '+x.value);const c=cById(p.client_id);if(c&&!c.service){c.service=x.value;await SB.from('clients').update({service:x.value}).eq('id',c.id)}});
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
@@ -392,6 +393,9 @@ const biKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+Math.floor(x.getM
 const BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];
 let bi=biKey(now);if(!BIS.includes(bi))bi=BIS.at(-1);
 const NOTBIZ=['loan','family','internal'];
+const SERVICES=['אימון כושר אישי','אימון זוגי','אימון בקבוצה','חבילת כושר חודשית','חבילת כושר חודשיים','חבילת כושר 3 חודשים','אימון אישי והעצמה אישית חבילה ל 3 חודשים','טיפול ספורטתרפיה','עיסוי רפואי','חבילת טיפולים - עיסוי רפואי + ספורטתרפיה','חבילת שיקום פציעה','ספורטתרפיה וייעוץ','יעוץ','שירות כללי'];
+const svcOf=p=>p.service||cById(p.client_id)?.service||'אימון כושר אישי';
+const svcSel=p=>`<select class="svc" data-svc="${p.id}" onclick="event.stopPropagation()" style="max-width:150px;padding:4px 6px;border-radius:8px;border:1px solid var(--line);font:inherit;font-size:13px;background:#fff">${SERVICES.map(x=>`<option${x===svcOf(p)?' selected':''}>${x}</option>`).join('')}</select>`;
 function income(){
   const list=S.payments.filter(p=>['mercantile','paybox','shay'].includes(p.source)&&!NOTBIZ.includes(p.category)&&biKey(p.paid_at)===bi).sort((a,b)=>a.paid_at<b.paid_at?-1:1);
   const sum=a=>a.reduce((t,p)=>t+ +p.amount,0),cash=list.filter(p=>p.category==='cash_unassigned'),q=list.filter(p=>p.invoice_status==='queued');
@@ -401,12 +405,12 @@ function income(){
     if(p.invoice_status==='not_needed')return `<span class="chip c-na">לא מפיקים</span>`;
     return `<button class="btn sm pri" data-act="issue" data-id="${p.id}">הפק מסמך</button>`};
   const row=p=>p.category==='cash_unassigned'
-    ?`<tr><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">הפקדת מזומן</div><div class="d">לשייך ללקוחות</div></td><td class="amt">${ils(p.amount)}</td><td>מזומן</td><td><button class="btn sm" data-act="split" data-id="${p.id}">שייך</button></td></tr>`
-    :`<tr class="click" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="amt">${ils(p.amount)}</td><td>${METHOD[p.method]||SRC[p.source]||''}</td><td>${doc(p)}</td></tr>`;
+    ?`<tr><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">הפקדת מזומן</div><div class="d">לשייך ללקוחות</div></td><td class="amt">${ils(p.amount)}</td><td>מזומן</td><td></td><td><button class="btn sm" data-act="split" data-id="${p.id}">שייך</button></td></tr>`
+    :`<tr class="click" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="amt">${ils(p.amount)}</td><td>${METHOD[p.method]||SRC[p.source]||''}</td><td>${p.invoice_status==='issued'||p.invoice_status==='not_needed'?esc(p.service||''):svcSel(p)}</td><td>${doc(p)}</td></tr>`;
   return head('דיווח למס',`תנועות בבנק, בפייבוקס ובחשבון של שי · ${BI[+bi.split('-')[1]]} ${bi.split('-')[0]}`,sw)+
   `<div class="grid kpis">${kpi('נכנס בתקופה',ils(sum(list)),list.length+' תנועות','ok')}${kpi('מזומן לשיוך',ils(sum(cash)),cash.length+' הפקדות',cash.length?'warn':'ok')}${kpi('ממתין להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
-  <div class="tbl" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>לקוח</th><th>סכום</th><th>דרך תשלום</th><th>מסמך</th></tr></thead><tbody>${list.map(row).join('')||'<tr><td colspan="5" class="empty">אין תנועות בתקופה — שלח לי את קבצי הבנק</td></tr>'}</tbody>
-  <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ</td><td class="amt">${ils(sum(list))}</td><td colspan="2"></td></tr></tfoot></table></div>`;
+  <div class="tbl" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>לקוח</th><th>סכום</th><th>דרך תשלום</th><th>שירות</th><th>מסמך</th></tr></thead><tbody>${list.map(row).join('')||'<tr><td colspan="6" class="empty">אין תנועות בתקופה — שלח לי את קבצי הבנק</td></tr>'}</tbody>
+  <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ</td><td class="amt">${ils(sum(list))}</td><td colspan="3"></td></tr></tfoot></table></div>`;
 }
 function splitDlg(p){
   const opts=S.clients.filter(c=>c.status!=='lead').sort((a,b)=>a.name.localeCompare(b.name,'he')).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -584,7 +588,7 @@ async function upload(files,link={}){
   toast('הועלה');if(!link.payment_id&&!link.expense_id)reload();
 }
 window.addEventListener('message',async e=>{if(e.source!==window||e.data?.type!=='TB_ISSUED')return;const r=e.data;
-  try{await db(SB.from('payments').update({invoice_status:'issued',invoice_number:String(r.number),invoice_date:r.date}).eq('id',r.pid),'חשבונית '+r.number+' נרשמה');
+  try{await db(SB.from('payments').update({invoice_status:'issued',invoice_number:String(r.number),invoice_date:r.date,service:svcOf(S.payments.find(x=>x.id===r.pid)||{})}).eq('id',r.pid),'חשבונית '+r.number+' נרשמה');
   const p=S.payments.find(x=>x.id===r.pid);if(r.wbName&&p?.client_id)await SB.from('clients').update({wb_name:r.wbName}).eq('id',p.client_id);
   window.postMessage({type:'TB_ACK',pid:r.pid},'*');if(S.clients.length)reload()}catch(err){}});
 async function openDoc(id){const d=S.docs.find(x=>x.id===id);const w=window.open('','_blank');const {data,error}=await SB.storage.from('docs').createSignedUrl(d.path,600);if(error||!data){w&&w.close();return toast('לא הצלחתי לפתוח')}if(w)w.location=data.signedUrl;else location.href=data.signedUrl}
@@ -592,7 +596,7 @@ const ACT={
   newPay:()=>payDlg(null),paid:async id=>{const r=tillToday().find(x=>x.payer.id===id);if(cById(id).not_yet_at)await SB.from('clients').update({not_yet_at:null}).eq('id',id);payDlg(null,id,r?.open)},
   notYet:async id=>{await db(SB.from('clients').update({not_yet_at:new Date().toISOString().slice(0,10)}).eq('id',id),'סומן: עוד לא');reload()},
   clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{const p=S.payments.find(x=>x.id===id),c=cById(p.client_id);
-    if(document.documentElement.dataset.tbExt)window.postMessage({type:'TB_ISSUE',job:{pid:p.id,name:c?.name||p.counterparty||'',wbName:c?.wb_name||null,amount:+p.amount,method:p.source==='shay'?'transfer':(p.method||'transfer'),date:p.paid_at}},'*');
+    if(document.documentElement.dataset.tbExt)window.postMessage({type:'TB_ISSUE',job:{pid:p.id,name:c?.name||p.counterparty||'',wbName:c?.wb_name||null,amount:+p.amount,product:svcOf(p),method:p.source==='shay'?'transfer':(p.method||'transfer'),date:p.paid_at}},'*');
     else toast('התוסף לא מותקן בכרום — בן ארי ייפתח ריק');
     window.open('https://wbfbamldcpa.azurewebsites.net/','webenefit');
     await db(SB.from('payments').update({invoice_status:'queued'}).eq('id',id));reload()},
