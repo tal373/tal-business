@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "טל · מילוי חשבוניות בבן ארי",
+  "version": "1.0",
+  "description": "ממלא חשבונית מס קבלה בבן ארי לפי תשלום מהאפליקציה. לא מפיק — ההפקה רק בלחיצה שלך על שמור.",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {"matches": ["https://tal373.github.io/tal-business/*"], "js": ["app.js"], "run_at": "document_start"},
+    {"matches": ["https://wbfbamldcpa.azurewebsites.net/*"], "js": ["wb.js"], "all_frames": true, "run_at": "document_idle"}
+  ],
+  "web_accessible_resources": [{"resources": ["page.js"], "matches": ["https://wbfbamldcpa.azurewebsites.net/*"]}],
+  "icons": {"128": "icon128.png"}
+}
