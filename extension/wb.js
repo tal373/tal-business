@@ -22,9 +22,7 @@
   });
   D.addEventListener('tb-clear', () => set({ job: null }));
   await sleep(1500);
-  const j = D.createElement('script');
-  j.textContent = 'window.__TB_JOB=' + JSON.stringify(job) + ';';
-  D.documentElement.appendChild(j);
+  D.documentElement.dataset.tbJob = JSON.stringify(job);
   const s = D.createElement('script');
   s.src = 'https://tal373.github.io/tal-business/wbfill.js?t=' + Date.now();
   D.documentElement.appendChild(s);

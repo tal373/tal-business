@@ -3,7 +3,9 @@
 window.__TB_RUN = async () => {
   const D = document, sleep = ms => new Promise(r => setTimeout(r, ms));
   const N = D.querySelector('#navigatorMetro');
-  const job = window.__TB_JOB;
+  let job = window.__TB_JOB;
+  for (let i = 0; i < 20 && !job; i++) { try { job = JSON.parse(D.documentElement.dataset.tbJob || 'null'); } catch (e) {} if (!job) await sleep(250); }
+  delete D.documentElement.dataset.tbJob;
   if (!N || !job || window.__TB_RUNNING) return;
   window.__TB_RUNNING = true;
   const emit = (n, o) => D.dispatchEvent(new CustomEvent(n, { detail: JSON.stringify(o || {}) }));
