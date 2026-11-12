@@ -256,7 +256,7 @@ function payers(){
 
 /* ---------- shell ---------- */
 function nav(){
-  const P=payers(),openN=P.filter(r=>r.open>0).length,noInv=S.payments.filter(p=>p.invoice_status==='queued'||p.reportable==null).length;
+  const openN=tillToday().filter(r=>!r.payer.not_yet_at).length,noInv=S.payments.filter(p=>p.invoice_status==='queued'||p.reportable==null).length;
   const badge={pay:openN,schedule:S.events.length,income:noInv};
   const item=([k,t])=>`<a href="#${k}" ${route===k?'aria-current="page"':''}>${ico(k==='acct'?'acct':k)}${t}${badge[k]?`<span class="badge">${badge[k]}</span>`:''}</a>`;
   $('#nav').innerHTML=ROUTES.map(item).join('');$('#mgrid').innerHTML=ROUTES.map(item).join('');
@@ -280,7 +280,7 @@ function bind(){
 
 /* ---------- screens ---------- */
 function overview(){
-  const P=payers(),open=P.reduce((a,r)=>a+r.open,0),exp=P.reduce((a,r)=>a+r.expectNet,0);
+  const P=payers(),TT=tillToday(),open=TT.reduce((a,r)=>a+r.open,0),exp=P.reduce((a,r)=>a+r.expectNet,0);
   const inM=S.payments.filter(p=>mKey(p.paid_at)===mKey(now)&&p.reportable!==false).reduce((a,p)=>a+ +p.amount,0);
   const mS=S.sessions.filter(s=>charged(s)&&mKey(s.start_at)===mKey(now));
   const xM=S.expenses.filter(x=>mKey(x.spent_at)===mKey(now)).reduce((a,x)=>a+ +x.amount,0);
@@ -288,7 +288,7 @@ function overview(){
   const xNoInv=S.expenses.filter(x=>x.invoice==='missing');
   const pk=P.filter(r=>r.left!=null&&r.left<=1);
   const al=[];
-  if(P.some(r=>r.open))al.push(['var(--bad)',`${P.filter(r=>r.open).length} משלמים עם תשלום פתוח · ${ils(open)}`,'#pay','לתשלומים']);
+  if(TT.length)al.push(["var(--bad)",`${TT.length} משלמים עם תשלום פתוח · ${ils(open)}`,'#pay','לתשלומים']);
   if(pk.length)al.push(['var(--warn)',`חבילות לחידוש: ${pk.map(r=>esc(r.payer.name)).join(', ')}`,'#pay','לחידוש']);
   if(noInv.length)al.push(['var(--warn)',`${noInv.length} תשלומים בלי חשבונית`,'#income','לחשבוניות']);
   if(xNoInv.length)al.push(['var(--warn)',`${xNoInv.length} הוצאות בלי חשבונית מצורפת`,'#expenses','להוצאות']);
@@ -304,19 +304,28 @@ function overview(){
   </div>`;
 }
 
+/* what happened until today and is not paid yet — per payer, simple: sessions done minus payments received */
+function tillToday(){
+  const rows={};
+  for(const s of S.sessions){if(!charged(s)||new Date(s.start_at)>now||new Date(s.start_at)<FROM)continue;const c=cById(s.client_id);if(!c)continue;const pid=payerId(c);
+    const r=rows[pid]||(rows[pid]={payer:cById(pid),sessions:[],due:0,paid:0});r.sessions.push(s);r.due+=+s.price||0;}
+  for(const p of S.payments){if(!p.client_id||p.category!=='trainee'||p.for_period==='before')continue;const c=cById(p.client_id);const pid=payerId(c);const r=rows[pid];if(r)r.paid+=+p.amount}
+  return Object.values(rows).map(r=>{r.open=Math.max(0,r.due-r.paid);
+    // which sessions are still unpaid: the latest ones that add up to the open amount
+    let left=r.open;r.unpaid=[];for(const s of [...r.sessions].sort((a,b)=>a.start_at<b.start_at?1:-1)){if(left<=0)break;r.unpaid.unshift(s);left-=+s.price||0}
+    return r}).filter(r=>r.open>0).sort((a,b)=>b.open-a.open);
+}
 function pay(){
-  const P=payers().sort((a,b)=>b.open-a.open);
-  const open=P.filter(r=>r.open>0),exp=P.filter(r=>r.expectNet>0).sort((a,b)=>b.expectNet-a.expectNet);
-  const paidM=S.payments.filter(p=>mKey(p.paid_at)===period&&p.client_id);
-  const ruleOf=r=>[...new Set(membersOf(r.payer.id).map(c=>RULE[c.billing]))].join(' · ');
-  return head('תשלומים','לפי הכללים: סוף חודש נגבה ב-1 לחודש · חבילה מראש · כל אימון ביום האימון',`<button class="btn pri" data-act="newPay">+ תשלום שהתקבל</button>`)+
-  `<div class="grid kpis">${kpi('פתוח עכשיו',ils(open.reduce((a,r)=>a+r.open,0)),open.length+' משלמים',open.length?'bad':'ok')}${kpi('צפוי עד ה-1',ils(exp.reduce((a,r)=>a+r.expectNet,0)),exp.length+' משלמים','warn')}${kpi('שולם מראש',ils(P.reduce((a,r)=>a+r.credit,0)),'זיכוי שמחכה לאימונים')}</div>
-  <div class="sec"><h3>פתוח עכשיו</h3><span>הגיע זמנו ולא שולם</span></div>
-  <div class="tbl"><table><thead><tr><th>משלם</th><th class="hide-m">איך משלם</th><th>סכום</th><th></th></tr></thead><tbody>${open.map(r=>`<tr class="click" data-client="${r.payer.id}"><td><div class="v">${esc(r.payer.name)}</div><div class="d">${membersOf(r.payer.id).length>1?'כולל '+membersOf(r.payer.id).filter(c=>c.id!==r.payer.id).map(c=>esc(c.name)).join(', '):''}</div></td><td class="hide-m"><span class="chip c-na">${ruleOf(r)}</span></td><td class="amt bad">${ils(r.open)}</td><td style="white-space:nowrap"><button class="btn sm" data-act="bill" data-id="${r.payer.id}">הודעה</button> <button class="btn sm pri" data-act="paid" data-id="${r.payer.id}">שולם</button></td></tr>`).join('')||'<tr><td colspan="4" class="empty">אין תשלומים פתוחים ✓</td></tr>'}</tbody></table></div>
-  <div class="sec"><h3>צפוי עד ה-1 לחודש הבא</h3><span>חודש שמצטבר וחבילות שנגמרות</span></div>
-  <div class="tbl"><table><thead><tr><th>משלם</th><th class="hide-m">למה</th><th>סכום</th></tr></thead><tbody>${exp.map(r=>`<tr class="click" data-client="${r.payer.id}"><td><div class="v">${esc(r.payer.name)}</div><div class="d hide-m"></div></td><td class="hide-m"><span class="chip c-warn">${[...r.why].join(' · ')}</span></td><td class="amt">${ils(r.expectNet)}</td></tr>`).join('')||'<tr><td colspan="3" class="empty">אין</td></tr>'}</tbody></table></div>
-  <div class="sec"><h3>שולם · ${mLabel(period)}</h3>${monthSwitch()}</div>
-  ${payTable(paidM)}`;
+  const L=tillToday(),tot=L.reduce((a,r)=>a+r.open,0);
+  const notYet=L.filter(r=>r.payer.not_yet_at),todo=L.filter(r=>!r.payer.not_yet_at);
+  const paidM=S.payments.filter(p=>mKey(p.paid_at)===period&&p.client_id&&p.category==='trainee');
+  const row=r=>`<tr class="click" data-client="${r.payer.id}"><td><div class="v">${esc(r.payer.name)}</div><div class="d">${r.unpaid.map(s=>fmtD(s.start_at)+(s.client_id!==r.payer.id?' ('+esc(cById(s.client_id).name.split(' ')[0])+')':'')).join(' · ')}</div></td><td class="num hide-m">${r.unpaid.length}</td><td class="amt bad">${ils(r.open)}</td><td style="white-space:nowrap"><button class="btn sm pri" data-act="paid" data-id="${r.payer.id}">שולם</button> ${r.payer.not_yet_at?`<span class="chip c-warn">עוד לא · ${fmtD(r.payer.not_yet_at)}</span> <button class="btn sm" data-act="clearNotYet" data-id="${r.payer.id}">↺</button>`:`<button class="btn sm" data-act="notYet" data-id="${r.payer.id}">עוד לא</button>`} <button class="btn sm" data-act="bill" data-id="${r.payer.id}">הודעה</button></td></tr>`;
+  const tbl=(list,empty)=>`<div class="tbl"><table><thead><tr><th>מי</th><th class="hide-m">אימונים</th><th>סכום</th><th></th></tr></thead><tbody>${list.map(row).join('')||`<tr><td colspan="4" class="empty">${empty}</td></tr>`}</tbody></table></div>`;
+  return head('תשלומים',`אימונים שהיו עד היום (${fmtD(now)}) ועוד לא שולמו`,`<button class="btn pri" data-act="newPay">+ תשלום שהתקבל</button>`)+
+  `<div class="grid kpis">${kpi('לא שולם עד היום',ils(tot),L.length+' משלמים',tot?'bad':'ok')}${kpi('לבדוק',todo.length,'עוד לא סימנת','warn')}${kpi('סומן "עוד לא"',notYet.length,'מחכים לתשלום')}</div>
+  <div class="sec"><h3>לבדוק</h3><span>לסמן שולם או עוד לא</span></div>${tbl(todo,'הכול מסומן ✓')}
+  ${notYet.length?`<div class="sec"><h3>עוד לא שילמו</h3><span>סימנת "עוד לא"</span></div>${tbl(notYet,'')}`:''}
+  <div class="sec"><h3>שולם · ${mLabel(period)}</h3>${monthSwitch()}</div>${payTable(paidM)}`;
 }
 function payTable(list,full){return `<div class="tbl"><table><thead><tr><th>תאריך</th><th>ממי</th><th class="hide-m">מאיפה</th>${full?'<th class="hide-m">סוג</th>':''}<th>סכום</th>${full?'<th>דיווח</th>':''}<th>חשבונית</th></tr></thead><tbody>${list.map(p=>{const r=REP[String(p.reportable)]||REP.null;return `<tr class="click ${p.reportable===false?'dim':''}" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="hide-m"><span class="chip c-na">${SRC[p.source]||METHOD[p.method]||''}</span></td>${full?`<td class="hide-m">${CAT[p.category]||''}</td>`:''}<td class="amt ${p.reportable===false?'':'ok'}">${ils(p.amount)}</td>${full?`<td><span class="chip ${r[1]}">${r[0]}</span></td>`:''}<td><span class="chip ${INV[p.invoice_status][1]}">${INV[p.invoice_status][0]}${p.invoice_number?' '+esc(p.invoice_number):''}</span>${S.docs.some(d=>d.payment_id===p.id)?' 📎':''}</td></tr>`}).join('')||`<tr><td colspan="${full?7:5}" class="empty">אין תשלומים בחודש הזה</td></tr>`}</tbody></table></div>`}
 
@@ -518,7 +527,9 @@ async function upload(files,link={}){
 }
 async function openDoc(id){const d=S.docs.find(x=>x.id===id);const w=window.open('','_blank');const {data,error}=await SB.storage.from('docs').createSignedUrl(d.path,600);if(error||!data){w&&w.close();return toast('לא הצלחתי לפתוח')}if(w)w.location=data.signedUrl;else location.href=data.signedUrl}
 const ACT={
-  newPay:()=>payDlg(null),paid:id=>{const r=payers().find(x=>x.payer.id===id);payDlg(null,id,r?.open)},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),
+  newPay:()=>payDlg(null),paid:async id=>{const r=tillToday().find(x=>x.payer.id===id);if(cById(id).not_yet_at)await SB.from('clients').update({not_yet_at:null}).eq('id',id);payDlg(null,id,r?.open)},
+  notYet:async id=>{await db(SB.from('clients').update({not_yet_at:new Date().toISOString().slice(0,10)}).eq('id',id),'סומן: עוד לא');reload()},
+  clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),
   bill:id=>{const t=billText(id);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('ההודעה הועתקה — מדביקים בוואטסאפ'),()=>dlg(`<h2>הודעת חיוב</h2><textarea class="f" rows="10">${esc(t)}</textarea>`))},
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
