@@ -97,8 +97,10 @@ window.__TB_RUN = async () => {
     const vat = [...top().querySelectorAll('*')].find(e => vis(e) && e.children.length === 0 && /לפני מע/.test(e.textContent));
     if (vat) {
       click(vat);
-      const inc = await wait(() => [...D.querySelectorAll('ons-dialog *,ons-alert-dialog *,.dialog *')].find(e => vis(e) && e.children.length === 0 && /המחיר כולל מע/.test(e.textContent)), 5000);
-      click(inc); await sleep(500);
+      const li = await wait(() => [...D.querySelectorAll('ons-dialog ons-list-item')].find(l => vis(l) && /המחיר כולל מע/.test(l.textContent)), 5000);
+      const rd = li.querySelector('ons-radio input') || li.querySelector('input') || li.querySelector('ons-radio');
+      rd.click(); await sleep(700);
+      if (!/כולל מע/.test(top().innerText)) throw new Error('vat');
     }
     const price = [...top().querySelectorAll('input')].filter(i => vis(i) && i.type !== 'search' && !isNaN(parseFloat(i.value)))[0];
     setVal(price, String(job.amount)); await sleep(400);
