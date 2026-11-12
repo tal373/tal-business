@@ -137,7 +137,8 @@ window.__TB_RUN = async () => {
 
     // 5. ready — the user presses "שמור"
     const [y, m, d] = (job.date || '').split('-');
-    say(`✓ החשבונית מוכנה: <b>${job.name}</b> · ${ils(job.amount)}<br>בדוק ולחץ <b>שמור</b> למעלה כדי להפיק.` +
+    const custNote = chosen ? '' : `<br>⚠️ <b>${job.name}</b> לא ברשימת הלקוחות בבן ארי — הלקוח נרשם רק לפי שם. אם זה לקוח קיים בשם אחר, בחר אותו בשדה הלקוח לפני ההפקה.`;
+    say(`✓ החשבונית מוכנה: <b>${job.name}</b> · ${ils(job.amount)}<br>בדוק ולחץ <b>שמור</b> למעלה כדי להפיק.` + custNote +
       (job.date ? (dateOk === 'ok' ? `<br>תאריך: ${+d}/${+m}/${y}` : `<br>⚠️ התאריך לא עודכן — שנה ידנית ל-${+d}/${+m}/${y}`) : ''));
 
     // 6. after the user issues: read the document number and send it back to the app
