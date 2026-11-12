@@ -399,7 +399,6 @@ function income(){
   const doc=p=>{const d=S.docs.find(x=>x.payment_id===p.id);
     if(p.invoice_status==='issued')return `<span class="chip c-ok">הופק${p.invoice_number?' '+esc(p.invoice_number):''}</span>${d?` <button class="btn sm" data-act="doc" data-id="${d.id}">📎</button>`:''}`;
     if(p.invoice_status==='not_needed')return `<span class="chip c-na">לא מפיקים</span>`;
-    if(p.invoice_status==='queued')return `<span class="chip c-warn">ממתין להפקה</span>`;
     return `<button class="btn sm pri" data-act="issue" data-id="${p.id}">הפק מסמך</button>`};
   const row=p=>p.category==='cash_unassigned'
     ?`<tr><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">הפקדת מזומן</div><div class="d">לשייך ללקוחות</div></td><td class="amt">${ils(p.amount)}</td><td>מזומן</td><td><button class="btn sm" data-act="split" data-id="${p.id}">שייך</button></td></tr>`
@@ -588,7 +587,7 @@ async function openDoc(id){const d=S.docs.find(x=>x.id===id);const w=window.open
 const ACT={
   newPay:()=>payDlg(null),paid:async id=>{const r=tillToday().find(x=>x.payer.id===id);if(cById(id).not_yet_at)await SB.from('clients').update({not_yet_at:null}).eq('id',id);payDlg(null,id,r?.open)},
   notYet:async id=>{await db(SB.from('clients').update({not_yet_at:new Date().toISOString().slice(0,10)}).eq('id',id),'סומן: עוד לא');reload()},
-  clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{await db(SB.from('payments').update({invoice_status:'queued'}).eq('id',id),'נכנס לתור הפקה');reload()},
+  clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{window.open('https://wbfbamldcpa.azurewebsites.net/','webenefit');await db(SB.from('payments').update({invoice_status:'queued'}).eq('id',id));reload()},
   bill:id=>{const t=billText(id);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('ההודעה הועתקה — מדביקים בוואטסאפ'),()=>dlg(`<h2>הודעת חיוב</h2><textarea class="f" rows="10">${esc(t)}</textarea>`))},
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
