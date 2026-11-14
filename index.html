@@ -466,6 +466,20 @@ function cardPos(c){ // package position from the calendar (title numbers like "
   if(n<=covered)return {card:0,used:k-1+n,size};
   const n2=n-covered;return {card:Math.ceil(n2/size),used:((n2-1)%size)+1,size};
 }
+function cardsOf(c){ // every card on its own, from the calendar
+  const ss=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&new Date(s.start_at)>=FROM).sort((a,b)=>a.start_at<b.start_at?-1:1);
+  const size=c.package_size||10,price=+c.price||0,k=+((ss[0]?.title||'').match(/(\d+)\s*$/)||[])[1]||1,covered=k>1?size-k+1:0;
+  const cards=[];const at=i=>i<covered?0:Math.floor((i-covered)/size)+1;
+  ss.forEach((s,i)=>{const n=at(i);(cards[n]=cards[n]||{idx:n,ses:[]}).ses.push(s)});
+  const L=cards.filter(Boolean).map(x=>{const past=x.ses.filter(s=>new Date(s.start_at)<=now),cap=x.idx===0?covered:size;
+    return {...x,size:x.idx===0?size:size,used:x.idx===0?(k-1)+past.length:past.length,planned:x.ses.length-past.length,amount:size*price,paid:x.idx===0||!!isSettled(c.id,'card-'+x.idx),done:(x.idx===0?(k-1)+past.length:past.length)>=size}});
+  if(!L.length)L.push({idx:1,ses:[],size,used:0,planned:0,amount:size*price,paid:!!isSettled(c.id,'card-1'),done:false});
+  const cur=L[L.length-1];
+  // pace: average days between past sessions -> when the current card ends and the next one is due
+  const past=ss.filter(s=>new Date(s.start_at)<=now),gap=past.length>1?(new Date(past.at(-1).start_at)-new Date(past[0].start_at))/(past.length-1):7*864e5;
+  const left=Math.max(0,size-cur.used),endAt=new Date(Math.max(+now,past.length?+new Date(past.at(-1).start_at):+now)+left*gap);
+  return {cards:L,cur,next:{idx:cur.idx+1,amount:size*price,at:endAt,left},size,price};
+}
 function collectRows(m){
   const pays=S.clients.filter(c=>!c.payer_id&&c.status!=='inactive'&&c.status!=='lead');
   return pays.map(c=>{const mem=membersOf(c.id).map(x=>x.id);
@@ -486,8 +500,14 @@ function pay(){
   const btn=r=>`<button class="btn sm ${r.paid?'pri':''}" data-col="${r.c.id}|${r.key}">${r.paid?'✓ שולם':'לא שולם'}</button>`;
   const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-colm="${k}" aria-pressed="${m===k}">${mLabel(k)}</button>`).join('')}</div>`;
   return head('גבייה',`כל מתאמן לפי התנאים שלו · ${mLabel(m)}${m===cur?' (עד היום)':''}`,sw)+
-  `<div class="grid kpis">${kpi('שילמו',R.filter(r=>r.paid).length,'מתוך '+R.length)}${kpi('עוד לא שילמו',unpaid.length,uSum?ils(uSum)+' (בלי כרטיסיות)':'',unpaid.length?'warn':'ok')}${kpi('כרטיסיות',R.filter(r=>r.type==='package').length,R.filter(r=>r.type==='package'&&r.p.used>=r.p.size).length+' נגמרו')}</div>
-  ${groups.map(([t,lbl])=>{const L=R.filter(r=>r.type===t);return L.length?`<div class="sec"><h3>${lbl}</h3><span>${L.length}</span></div><div class="tbl"><table><tbody>${L.map(r=>`<tr><td class="click" data-client="${r.c.id}"><div class="v">${esc(r.c.name)}</div><div class="d">${status(r)}</div></td><td style="width:1%;white-space:nowrap">${btn(r)}</td></tr>`).join('')}</tbody></table></div>`:''}).join('')}
+  `<div class="grid kpis">${kpi('שילמו',R.filter(r=>r.paid).length,'מתוך '+R.length)}${kpi('עוד לא שילמו',unpaid.length,uSum?ils(uSum)+' (בלי כרטיסיות)':'',unpaid.length?'warn':'ok')}${(()=>{const P=R.filter(r=>r.type==='package').map(r=>cardsOf(r.c));const unpaidCards=P.reduce((t,X)=>t+X.cards.filter(c=>c.idx>0&&!c.paid).reduce((a,c)=>a+c.amount,0),0);const end=new Date(now.getFullYear(),now.getMonth()+1,1);const nextIn=P.filter(X=>X.next.at<end).reduce((t,X)=>t+X.next.amount,0);return kpi('צפוי להיכנס',ils(uSum+unpaidCards+nextIn),'סוף חודש '+ils(uSum)+' · כרטיסיות '+ils(unpaidCards+nextIn))})()}</div>
+  ${(()=>{const P=R.filter(r=>r.type==='package');if(!P.length)return '';return `<div class="sec"><h3>כרטיסיות</h3><span>כל כרטיסייה בנפרד · ${P.length} מתאמנים</span></div>`+P.map(r=>{const X=cardsOf(r.c);
+     return `<div class="card" style="margin-bottom:10px"><h2>${esc(r.c.name)} <span class="chip c-na">כרטיסייה של ${X.size} · ${ils(X.price)} לאימון · ${ils(X.size*X.price)}</span></h2>
+     <div class="tbl" style="margin-top:8px"><table><thead><tr><th>כרטיסייה</th><th>ניצול</th><th class="hide-m">תאריכים</th><th style="text-align:left">סכום</th><th></th></tr></thead><tbody>
+     ${X.cards.map(cd=>`<tr><td class="v">${cd.idx===0?'התחילה לפני ספטמבר':'#'+cd.idx}${cd===X.cur?' <span class="chip c-warn">נוכחית</span>':''}</td><td class="num">${cd.used} / ${cd.size}${cd.planned?` <span class="d">+${cd.planned} ביומן</span>`:''}</td><td class="hide-m d">${cd.ses.map(s=>fmtD(s.start_at)).join(' · ')||'—'}</td><td class="amt">${cd.idx===0?'—':ils(cd.amount)}</td><td style="width:1%;white-space:nowrap">${cd.idx===0?'<span class="chip c-ok">שולם קודם</span>':`<button class="btn sm ${cd.paid?'pri':''}" data-col="${r.c.id}|card-${cd.idx}">${cd.paid?'✓ שולם':'לא שולם'}</button>`}</td></tr>`).join('')}
+     <tr style="background:var(--surface2)"><td class="v">#${X.next.idx} · הבאה</td><td class="d">${X.next.left?`עוד ${X.next.left} אימונים בנוכחית`:'הנוכחית נגמרה'}</td><td class="hide-m d">צפוי בערך ${fmtD(X.next.at)}</td><td class="amt">${ils(X.next.amount)}</td><td><span class="chip c-na">צפוי</span></td></tr>
+     </tbody></table></div></div>`}).join('')})()}
+  ${groups.filter(([t])=>t!=='package').map(([t,lbl])=>{const L=R.filter(r=>r.type===t);return L.length?`<div class="sec"><h3>${lbl}</h3><span>${L.length}</span></div><div class="tbl"><table><tbody>${L.map(r=>`<tr><td class="click" data-client="${r.c.id}"><div class="v">${esc(r.c.name)}</div><div class="d">${status(r)}</div></td><td style="width:1%;white-space:nowrap">${btn(r)}</td></tr>`).join('')}</tbody></table></div>`:''}).join('')}
   <p class="note d" style="margin-top:10px">סוף חודש: ספטמבר ואוקטובר סגורים. כרטיסייה: "שולם" מתייחס לכרטיסייה הנוכחית.</p>`;
 }
 function payTable(list,full){return `<div class="tbl"><table><thead><tr><th>תאריך</th><th>ממי</th><th class="hide-m">מאיפה</th>${full?'<th class="hide-m">סוג</th>':''}<th>סכום</th>${full?'<th>דיווח</th>':''}<th>חשבונית</th></tr></thead><tbody>${list.map(p=>{const r=REP[String(p.reportable)]||REP.null;return `<tr class="click ${p.reportable===false?'dim':''}" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="hide-m"><span class="chip c-na">${SRC[p.source]||METHOD[p.method]||''}</span></td>${full?`<td class="hide-m">${CAT[p.category]||''}</td>`:''}<td class="amt ${p.reportable===false?'':'ok'}">${ils(p.amount)}</td>${full?`<td><span class="chip ${r[1]}">${r[0]}</span></td>`:''}<td><span class="chip ${INV[p.invoice_status][1]}">${INV[p.invoice_status][0]}${p.invoice_number?' '+esc(p.invoice_number):''}</span>${S.docs.some(d=>d.payment_id===p.id)?' 📎':''}</td></tr>`}).join('')||`<tr><td colspan="${full?7:5}" class="empty">אין תשלומים בחודש הזה</td></tr>`}</tbody></table></div>`}
