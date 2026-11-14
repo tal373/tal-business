@@ -140,6 +140,7 @@ select.s{font:13px var(--font-b);border:1px solid var(--line);border-radius:6px;
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hide-m{display:none}
 }
+@media(max-width:760px){#tForm{grid-template-columns:1fr 1fr!important}#tForm label:first-child{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -259,7 +260,7 @@ function payers(){
 /* ---------- shell ---------- */
 function nav(){
   const openN=tillToday().filter(r=>!r.payer.not_yet_at).length,noInv=S.payments.filter(p=>p.invoice_status==='queued'||p.reportable==null).length;
-  const badge={pay:openN,clients:S.events.length,income:noInv};
+  const tg=taskGroups().g;const badge={pay:openN,clients:S.events.length,income:noInv,tasks:tg.late.length+tg.today.length};
   const item=([k,t])=>`<a href="#${k}" ${route===k?'aria-current="page"':''}>${ico(k==='acct'?'acct':k)}${t}${badge[k]?`<span class="badge">${badge[k]}</span>`:''}</a>`;
   $('#nav').innerHTML=ROUTES.map(item).join('');$('#mgrid').innerHTML=ROUTES.map(item).join('');
   $('#mTitle').textContent=ROUTES.find(r=>r[0]===route)[1];
@@ -318,7 +319,9 @@ function bind(){
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
-  $$('input[data-task]').forEach(c=>c.onchange=()=>db(SB.from('tasks').update({done:c.checked}).eq('id',c.dataset.task)).then(reload));
+  $$('input[data-task]').forEach(c=>c.onchange=()=>db(SB.from('tasks').update({done:c.checked,status:c.checked?'done':'todo',done_at:c.checked?new Date().toISOString():null}).eq('id',c.dataset.task),c.checked?'בוצע ✓':'הוחזר').then(reload));
+  $$('[data-tview]').forEach(b=>b.onclick=()=>{tView=b.dataset.tview;render()});
+  {const f=$('#tForm');if(f)f.onsubmit=async e=>{e.preventDefault();const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null,priority:$('#tP').value,category:$('#tC').value||null,client_id:$('#tK').value||null,status:'todo'}),'נוסף');reload()}}
 }
 
 /* ---------- screens ---------- */
@@ -510,9 +513,56 @@ function acct(){
   <div class="card"><h2>שליחה לאבירם</h2><p class="cap">קובץ אחד עם כל ההכנסות וההוצאות של החודש, ואחר כך סימון שהמסמכים נשלחו</p><div class="tools"><button class="btn pri" data-act="csv">הורדת דוח החודש</button><button class="btn" data-act="sent">סימון: הכול נשלח</button></div><p class="note">את המסמכים עצמם מעלים במסך "מסמכים".</p></div></div>`;
 }
 
+const TPRI={high:['דחוף','c-bad'],normal:['רגיל','c-na'],low:['נמוך','c-na']};
+const TCAT=['מתאמנים','כספים וחשבוניות','תכנים ותכניות','שיווק','אישי','אחר'];
+const TST={todo:'לעשות',doing:'בתהליך',done:'בוצע'};
+let tView='open';
+const dOnly=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x};
+function taskGroups(){
+  const today=dOnly(now),wkEnd=new Date(today);wkEnd.setDate(wkEnd.getDate()+(6-today.getDay()));
+  const open=S.tasks.filter(t=>t.status!=='done'&&!t.done);
+  const g={late:[],today:[],week:[],later:[],nodate:[]};
+  open.forEach(t=>{if(!t.due)g.nodate.push(t);else{const d=dOnly(t.due);if(d<today)g.late.push(t);else if(+d===+today)g.today.push(t);else if(d<=wkEnd)g.week.push(t);else g.later.push(t)}});
+  const pr={high:0,normal:1,low:2},srt=l=>l.sort((a,b)=>(pr[a.priority||'normal']-pr[b.priority||'normal'])||((a.due||'9')<(b.due||'9')?-1:1));
+  Object.values(g).forEach(srt);return {g,open};
+}
 function tasks(){
-  return head('משימות','')+`<div class="form"><label>משימה<input class="f" id="tT"></label><label>עד<input class="f" type="date" id="tD"></label><button class="btn pri" data-act="newTask">הוספה</button></div>
-  <div class="tbl"><table><tbody>${S.tasks.map(t=>`<tr class="${t.done?'dim':''}"><td style="width:36px"><input type="checkbox" data-task="${t.id}" ${t.done?'checked':''}></td><td><div class="v">${esc(t.title)}</div></td><td class="num">${t.due?fmtD(t.due):''}</td></tr>`).join('')||'<tr><td class="empty">אין משימות</td></tr>'}</tbody></table></div>`;
+  const {g,open}=taskGroups(),done=S.tasks.filter(t=>t.status==='done'||t.done).sort((a,b)=>(b.done_at||'')<(a.done_at||'')?-1:1);
+  const row=t=>{const c=t.client_id&&cById(t.client_id),p=TPRI[t.priority||'normal'],isDone=t.status==='done'||t.done;
+    return `<tr class="${isDone?'dim':''}"><td style="width:36px"><input type="checkbox" data-task="${t.id}" ${isDone?'checked':''} aria-label="בוצע"></td>
+    <td class="click" data-act="editTask" data-id="${t.id}"><div class="v">${esc(t.title)}</div>${t.notes?`<div class="d">${esc(t.notes)}</div>`:''}
+    <div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">${t.priority==='high'?`<span class="chip ${p[1]}">${p[0]}</span>`:''}${t.status==='doing'?'<span class="chip c-warn">בתהליך</span>':''}${t.category?`<span class="chip c-na">${esc(t.category)}</span>`:''}${c?`<span class="chip c-ok">${esc(c.name)}</span>`:''}</div></td>
+    <td class="num" style="white-space:nowrap">${t.due?`${DAYS[new Date(t.due).getDay()]} ${fmtD(t.due)}`:''}</td></tr>`};
+  const sec=(title,l,cls)=>l.length?`<div class="sec"><h3 ${cls?`style="color:var(--${cls})"`:''}>${title} · ${l.length}</h3></div><div class="tbl"><table><tbody>${l.map(row).join('')}</tbody></table></div>`:'';
+  const views=[['open','פתוחות'],['focus','היום ובאיחור'],['done','בוצעו']];
+  const cliOpts=S.clients.filter(c=>c.status!=='inactive').sort((a,b)=>a.name.localeCompare(b.name,'he')).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  return head('משימות',`${open.length} פתוחות${g.late.length?` · ${g.late.length} באיחור`:''}`)+
+  `<div class="grid kpis">${kpi('באיחור',g.late.length,'',g.late.length?'bad':'ok')}${kpi('להיום',g.today.length,'',g.today.length?'warn':'ok')}${kpi('השבוע',g.week.length,'')}${kpi('פתוחות',open.length,g.nodate.length+' בלי תאריך')}</div>
+  <form class="form" id="tForm" style="margin-top:14px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
+   <label>משימה חדשה<input class="f" id="tT" placeholder="מה צריך לעשות?" required></label>
+   <label>עד<input class="f" type="date" id="tD"></label>
+   <label>עדיפות<select class="f" id="tP"><option value="normal">רגיל</option><option value="high">דחוף</option><option value="low">נמוך</option></select></label>
+   <label>תחום<select class="f" id="tC"><option value="">—</option>${TCAT.map(c=>`<option>${c}</option>`).join('')}</select></label>
+   <label>מתאמן<select class="f" id="tK"><option value="">—</option>${cliOpts}</select></label>
+   <button class="btn pri">הוספה</button></form>
+  <div class="tools" style="margin-top:12px">${views.map(([k,t])=>`<button class="btn" data-tview="${k}" aria-pressed="${tView===k}">${t}</button>`).join('')}</div>
+  ${tView==='done'?(sec('בוצעו',done)||'<div class="empty">עוד לא סימנת משימות כבוצעו</div>'):
+   tView==='focus'?(sec('באיחור',g.late,'bad')+sec('היום',g.today,'accent')||'<div class="empty">אין משימות להיום ✓</div>'):
+   (sec('באיחור',g.late,'bad')+sec('היום',g.today,'accent')+sec('השבוע',g.week)+sec('בהמשך',g.later)+sec('בלי תאריך',g.nodate)||'<div class="empty">אין משימות פתוחות ✓</div>')}`;
+}
+function taskDlg(t){
+  const cliOpts=S.clients.sort((a,b)=>a.name.localeCompare(b.name,'he')).map(c=>`<option value="${c.id}" ${c.id===t.client_id?'selected':''}>${esc(c.name)}</option>`).join('');
+  const w=dlg(`<h2>עריכת משימה</h2><div class="form" style="background:none;border:0;padding:0">
+   <label>משימה<input class="f" id="eT" value="${esc(t.title)}"></label>
+   <label>עד<input class="f" type="date" id="eD" value="${t.due||''}"></label>
+   <label>מצב<select class="f" id="eS">${Object.entries(TST).map(([k,v])=>`<option value="${k}" ${k===(t.status||'todo')?'selected':''}>${v}</option>`).join('')}</select></label>
+   <label>עדיפות<select class="f" id="eP">${Object.entries(TPRI).map(([k,v])=>`<option value="${k}" ${k===(t.priority||'normal')?'selected':''}>${v[0]}</option>`).join('')}</select></label>
+   <label>תחום<select class="f" id="eC"><option value="">—</option>${TCAT.map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')}</select></label>
+   <label>מתאמן<select class="f" id="eK"><option value="">—</option>${cliOpts}</select></label>
+   <label style="grid-column:1/-1">הערות<textarea class="f" id="eN" rows="3">${esc(t.notes||'')}</textarea></label></div>
+   <div class="row"><button class="btn pri" data-x="save">שמירה</button><button class="btn" data-x="del" style="margin-inline-start:auto">מחיקה</button></div>`);
+  w.querySelector('[data-x=save]').onclick=async()=>{const st=val(w,'#eS');await db(SB.from('tasks').update({title:val(w,'#eT'),due:val(w,'#eD')||null,status:st,done:st==='done',done_at:st==='done'?(t.done_at||new Date().toISOString()):null,priority:val(w,'#eP'),category:val(w,'#eC')||null,client_id:val(w,'#eK')||null,notes:val(w,'#eN')||null}).eq('id',t.id),'נשמר');w.remove();reload()};
+  w.querySelector('[data-x=del]').onclick=async()=>{if(!confirm('למחוק את המשימה?'))return;await db(SB.from('tasks').delete().eq('id',t.id),'נמחק');w.remove();reload()};
 }
 
 /* ---------- dialogs & actions ---------- */
@@ -661,6 +711,7 @@ const ACT={
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),editClient:id=>clientEdit(cById(id)),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
   sync:async(_,b)=>{b&&(b.disabled=true);const {error}=await SB.functions.invoke('sync-calendar');b&&(b.disabled=false);if(error)return toast('הסנכרון נכשל');toast('היומן סונכרן');reload()},
+  editTask:id=>taskDlg(S.tasks.find(t=>t.id===id)),
   newTask:async()=>{const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null}),'נוסף');reload()},
   sent:async()=>{const ids=S.docs.filter(d=>d.month===period).map(d=>d.id);if(!ids.length)return toast('אין מסמכים בחודש הזה');await db(SB.from('docs').update({sent_to_accountant:true}).in('id',ids),'סומן');reload()},
   csv:()=>{const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const rows=[['סוג','תאריך','שם/ספק','סכום','אמצעי/קטגוריה','חשבונית','מספר חשבונית','הערה']];
