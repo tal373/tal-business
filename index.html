@@ -278,17 +278,26 @@ function termsOf(c){
   if(c.billing==='package'&&c.package_size){const d=clientDue(c);const at=d.left!=null?c.package_size-d.left:null;return `חבילה${at!=null?` ${at} מתוך ${c.package_size}`:' של '+c.package_size} · ${p} לאימון`}
   return `${RULE[c.billing]} · ${p} לאימון${c.payer_id?' · משלם/ת: '+cById(c.payer_id)?.name:''}`;
 }
+const sKey=s=>s.event_id&&!String(s.event_id).startsWith('manual')?s.event_id:s.id;
+const isKid=cid=>cById(cid)?.slug?.startsWith('kid-');
+let calKids=false;
 function cal(){
   const ks=PERIODS.filter(k=>k<=mKey(now));
   const ses=S.sessions.filter(s=>done(s)&&new Date(s.start_at)<=now&&ks.includes(mKey(s.start_at)));
-  const g={};ses.forEach(s=>{const m=(g[s.client_id]=g[s.client_id]||{});const x=(m[mKey(s.start_at)]=m[mKey(s.start_at)]||{n:0,a:0});x.n++;x.a+=+s.price||0});
-  const rows=Object.entries(g).map(([cid,m])=>({c:cById(cid),m,n:Object.values(m).reduce((t,x)=>t+x.n,0),a:Object.values(m).reduce((t,x)=>t+x.a,0)})).filter(r=>r.c).sort((a,b)=>a.c.name.localeCompare(b.c.name,'he'));
-  const tot=k=>rows.reduce((t,r)=>({n:t.n+(r.m[k]?.n||0),a:t.a+(r.m[k]?.a||0)}),{n:0,a:0});
+  const agg=list=>{const m={};list.forEach(s=>{const k=mKey(s.start_at),x=(m[k]=m[k]||{keys:new Set(),a:0});x.keys.add(sKey(s));x.a+=+s.price||0});Object.values(m).forEach(x=>x.n=x.keys.size);return m};
+  const tot=m=>Object.values(m).reduce((t,x)=>({n:t.n+x.n,a:t.a+x.a}),{n:0,a:0});
+  const by={};ses.forEach(s=>(by[s.client_id]=by[s.client_id]||[]).push(s));
+  const rows=Object.entries(by).filter(([cid])=>cById(cid)).map(([cid,l])=>{const m=agg(l);return {c:cById(cid),m,...tot(m)}}).sort((a,b)=>a.c.name.localeCompare(b.c.name,'he'));
+  const kidRows=rows.filter(r=>isKid(r.c.id)),adult=rows.filter(r=>!isKid(r.c.id));
+  const kidSes=ses.filter(s=>isKid(s.client_id)),kidM=agg(kidSes),kidT=tot(kidM);
   const cell=x=>x?`<td class="amt"><div>${ils(x.a)}</div><div class="d">${x.n} אימונים</div></td>`:'<td class="amt d">—</td>';
-  const all=rows.reduce((t,r)=>({n:t.n+r.n,a:t.a+r.a}),{n:0,a:0});
+  const allM=agg(ses),allT=tot(allM);
+  const tr=(r,ind)=>`<tr class="click" data-card="${r.c.id}"><td><div class="v" ${ind?'style="padding-inline-start:18px;font-weight:500"':''}>${ind?'↳ ':''}${esc(r.c.name)}</div></td>${ks.map(k=>cell(r.m[k])).join('')}${cell({n:r.n,a:r.a})}</tr>`;
+  const kidsRow=kidRows.length?`<tr class="click" data-calkids="1" style="background:var(--surface2,#f1ece2)"><td><div class="v">${calKids?'▾':'▸'} קבוצת ילדים · שלישי 15:00</div><div class="d">${kidRows.length} ילדים · אימון קבוצתי אחד בכל שבוע · לחיצה לפירוט</div></td>${ks.map(k=>cell(kidM[k])).join('')}${cell(kidT)}</tr>${calKids?kidRows.map(r=>tr(r,true)).join(''):''}`:'';
   return head('הכנסה לפי יומן',`כמה אימונים כל מתאמן עשה בכל חודש ובאיזה שווי — ישירות מיומן גוגל${mKey(now)===ks.at(-1)?' (החודש הנוכחי עד היום)':''}`)+
-  `<div class="tbl"><table><thead><tr><th>מתאמן</th>${ks.map(k=>`<th style="text-align:left">${mLabel(k)}</th>`).join('')}<th style="text-align:left">סה״כ</th></tr></thead><tbody>${rows.map(r=>`<tr class="click" data-card="${r.c.id}"><td><div class="v">${esc(r.c.name)}</div></td>${ks.map(k=>cell(r.m[k])).join('')}${cell({n:r.n,a:r.a})}</tr>`).join('')||`<tr><td colspan="${ks.length+2}" class="empty">אין אימונים</td></tr>`}</tbody>
-  <tfoot><tr style="font-weight:700;background:var(--surface)"><td>סה״כ</td>${ks.map(k=>cell(tot(k))).join('')}${cell(all)}</tr></tfoot></table></div>`;
+  `<div class="tbl"><table><thead><tr><th>מתאמן</th>${ks.map(k=>`<th style="text-align:left">${mLabel(k)}</th>`).join('')}<th style="text-align:left">סה״כ</th></tr></thead><tbody>${adult.map(r=>tr(r)).join('')}${kidsRow}${rows.length?'':`<tr><td colspan="${ks.length+2}" class="empty">אין אימונים</td></tr>`}</tbody>
+  <tfoot><tr style="font-weight:700;background:var(--surface)"><td>סה״כ</td>${ks.map(k=>cell(allM[k])).join('')}${cell(allT)}</tr></tfoot></table></div>
+  <p class="note d" style="margin-top:6px">אימון קבוצתי או זוגי נספר כאימון אחד בסה״כ, והשווי הוא של כל המשתתפים יחד.</p>`;
 }
 function cardDlg(c){
   const ks=PERIODS.filter(k=>k<=mKey(now));
@@ -316,6 +325,7 @@ function bind(){
   $$('select[data-einv]').forEach(x=>x.onchange=async()=>{const e=S.expenses.find(y=>y.id===x.dataset.einv);e.invoice=x.value;await db(SB.from('expenses').update({invoice:x.value}).eq('id',e.id),'נשמר');render()});
   $$('[data-eup]').forEach(b=>b.onclick=()=>{const id=b.dataset.eup,e=S.expenses.find(y=>y.id===id);const i=document.createElement('input');i.type='file';i.accept='application/pdf,image/*';i.onchange=async()=>{if(i.files[0]){await upload([i.files[0]],{expense_id:id,kind:'expense',month:mKey(e.spent_at)});if(e.invoice==='missing'){await SB.from('expenses').update({invoice:'received'}).eq('id',id)}reload()}};i.click()});
   $$('select[data-svc]').forEach(x=>x.onchange=async()=>{const p=S.payments.find(y=>y.id===x.dataset.svc);p.service=x.value;await db(SB.from('payments').update({service:x.value}).eq('id',p.id),'נשמר: '+x.value);const c=cById(p.client_id);if(c&&!c.service){c.service=x.value;await SB.from('clients').update({service:x.value}).eq('id',c.id)}});
+  $$('[data-calkids]').forEach(r=>r.onclick=()=>{calKids=!calKids;render()});
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
@@ -411,8 +421,8 @@ function schedule(){
   const lbl={'-1':'שבוע שעבר','0':'השבוע','1':'שבוע הבא'};
   return head('מתאמנים ולו״ז',`${fmtD(from)}–${fmtD(new Date(to-1))} · מסונכרן מהיומן כל שעה`,`<button class="btn" data-act="sync">סנכרון עכשיו</button>`)+cliTabs()+
   `<div class="tools">${[-1,0,1].map(w=>`<button class="btn" data-w="${w}" aria-pressed="${wk===w}">${lbl[w]}</button>`).join('')}</div>
-  <div class="grid kpis">${kpi('אימונים בשבוע',ses.length,'')}${kpi('משובצים',booked.size,'מתאמנים')}${kpi('פעילים בלי אימון',not.length,'',not.length?'warn':'ok')}</div>
-  <div class="grid two" style="margin-top:14px"><div class="card"><h2>השבוע ביומן</h2><p class="cap">לחיצה על אימון: שינוי סטטוס או מחיר</p>${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div style="margin-bottom:10px"><div class="d" style="font-weight:600;color:var(--muted);margin-bottom:4px">יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</div><div class="sess">${byDay[d].sort((a,b)=>a.start_at<b.start_at?-1:1).map(s=>`<span data-act="sess" data-id="${s.id}" class="${s.status==='free'?'free':s.status==='scheduled'?'plan':''}">${fmtT(s.start_at)} ${esc(cById(s.client_id)?.name.split(' ')[0])}</span>`).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}</div>
+  <div class="grid kpis">${kpi('אימונים בשבוע',new Set(ses.map(sKey)).size,'')}${kpi('משובצים',booked.size,'מתאמנים')}${kpi('פעילים בלי אימון',not.length,'',not.length?'warn':'ok')}</div>
+  <div class="grid two" style="margin-top:14px"><div class="card"><h2>השבוע ביומן</h2><p class="cap">לחיצה על אימון: שינוי סטטוס או מחיר</p>${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div style="margin-bottom:10px"><div class="d" style="font-weight:600;color:var(--muted);margin-bottom:4px">יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</div><div class="sess">${Object.values(byDay[d].reduce((m,s)=>((m[sKey(s)]=m[sKey(s)]||[]).push(s),m),{})).sort((a,b)=>a[0].start_at<b[0].start_at?-1:1).map(L=>{const s=L[0];return L.length>1?`<span class="${s.status==='scheduled'?'plan':''}" title="${esc(L.map(x=>cById(x.client_id)?.name).join(', '))}">${fmtT(s.start_at)} ${L.every(x=>isKid(x.client_id))?'קבוצת ילדים':'זוגי'} (${L.length})</span>`:`<span data-act="sess" data-id="${s.id}" class="${s.status==='free'?'free':s.status==='scheduled'?'plan':''}">${fmtT(s.start_at)} ${esc(cById(s.client_id)?.name.split(' ')[0])}</span>`}).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}</div>
   <div class="card"><h2>לא שובצו</h2><p class="cap">פעילים בלי אימון ביומן בשבוע הזה</p><div class="sess">${not.map(c=>`<span data-act="client" data-id="${c.id}">${esc(c.name)}</span>`).join('')||'<span>כולם משובצים ✓</span>'}</div></div></div>
   ${S.events.length?`<div class="sec"><h3>אירועים ביומן שלא שויכו</h3><span>שייך למתאמן או סמן שזה לא אימון</span></div><div class="tbl"><table><tbody>${S.events.map(e=>`<tr class="click" data-act="event" data-id="${esc(e.event_id)}"><td class="num">${fmtD(e.start_at)} ${fmtT(e.start_at)}</td><td><div class="v">${esc(e.title)}</div></td><td><span class="chip c-warn">לשייך</span></td></tr>`).join('')}</tbody></table></div>`:''}`;
 }
