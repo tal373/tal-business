@@ -303,6 +303,8 @@ function bind(){
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
   $$('[data-bi]').forEach(b=>b.onclick=()=>{bi=b.dataset.bi;render()});
+  $$('[data-clif]').forEach(b=>b.onclick=()=>{cliF=b.dataset.clif;render()});
+  $$('[data-cstat]').forEach(b=>b.onclick=async()=>{const c=cById(b.dataset.cstat);const v=c.status==='active'?'inactive':'active';c.status=v;await db(SB.from('clients').update({status:v}).eq('id',c.id),v==='active'?'סומן פעיל':'סומן לא פעיל');render()});
   $$('[data-exall]').forEach(b=>b.addEventListener('click',()=>{exAll=b.dataset.exall==='1';render()}));
   $$('[data-exf]').forEach(b=>b.onclick=()=>{exF=b.dataset.exf;render()});
   $$('[data-ecatf]').forEach(b=>b.onclick=()=>{exCat=b.dataset.ecatf;render()});
@@ -369,14 +371,28 @@ function pay(){
 }
 function payTable(list,full){return `<div class="tbl"><table><thead><tr><th>תאריך</th><th>ממי</th><th class="hide-m">מאיפה</th>${full?'<th class="hide-m">סוג</th>':''}<th>סכום</th>${full?'<th>דיווח</th>':''}<th>חשבונית</th></tr></thead><tbody>${list.map(p=>{const r=REP[String(p.reportable)]||REP.null;return `<tr class="click ${p.reportable===false?'dim':''}" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="hide-m"><span class="chip c-na">${SRC[p.source]||METHOD[p.method]||''}</span></td>${full?`<td class="hide-m">${CAT[p.category]||''}</td>`:''}<td class="amt ${p.reportable===false?'':'ok'}">${ils(p.amount)}</td>${full?`<td><span class="chip ${r[1]}">${r[0]}</span></td>`:''}<td><span class="chip ${INV[p.invoice_status][1]}">${INV[p.invoice_status][0]}${p.invoice_number?' '+esc(p.invoice_number):''}</span>${S.docs.some(d=>d.payment_id===p.id)?' 📎':''}</td></tr>`}).join('')||`<tr><td colspan="${full?7:5}" class="empty">אין תשלומים בחודש הזה</td></tr>`}</tbody></table></div>`}
 
+let cliF='active';
 function clients(){
-  const P=Object.fromEntries(payers().map(r=>[r.payer.id,r]));
-  const list=S.clients.filter(c=>filter==='all'||c.status===filter);
-  return head('מתאמנים',`${S.clients.filter(c=>c.status==='active').length} פעילים`,`<button class="btn pri" data-act="newClient">+ מתאמן</button>`)+
-  `<div class="tools">${[['active','פעילים'],['inactive','לא פעילים'],['lead','לידים'],['all','הכל']].map(([k,t])=>`<button class="btn" data-f="${k}" aria-pressed="${filter===k}">${t}</button>`).join('')}</div>
-  <div class="tbl"><table><thead><tr><th>שם</th><th>איך משלם</th><th class="hide-m">מחיר</th><th class="hide-m">אימונים ב${HM[now.getMonth()]}</th><th>מצב</th></tr></thead><tbody>${list.map(c=>{const r=P[payerId(c)];const own=payerId(c)===c.id;const n=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&mKey(s.start_at)===mKey(now)).length;
-    const st=!own?`<span class="chip c-na">משלם/ת: ${esc(cById(c.payer_id)?.name)}</span>`:r?.open?`<span class="chip c-bad">פתוח ${ils(r.open)}</span>`:r?.credit?`<span class="chip c-ok">שולם מראש ${ils(r.credit)}</span>`:`<span class="chip c-ok">מסודר</span>`;
-    return `<tr class="click" data-client="${c.id}"><td><div class="v">${esc(c.name)}</div>${c.notes?`<div class="d">${esc(c.notes)}</div>`:''}</td><td><span class="chip c-na">${RULE[c.billing]}${c.billing==='package'&&c.package_size?' '+c.package_size:''}</span>${r?.left!=null&&own?`<div class="d">נשארו ${r.left}</div>`:''}</td><td class="hide-m num">${c.price?ils(c.price):'—'}${c.pair_price?`<div class="d">זוגי ${ils(c.pair_price)}</div>`:''}</td><td class="hide-m num">${n}</td><td>${st}</td></tr>`}).join('')}</tbody></table></div>`;
+  const ws=new Date(now);ws.setHours(0,0,0,0);ws.setDate(ws.getDate()-ws.getDay());
+  const nw=new Date(ws);nw.setDate(nw.getDate()+7);const nw2=new Date(nw);nw2.setDate(nw2.getDate()+7);
+  const live=s=>!s.deleted_from_calendar;
+  const info=c=>{const ss=S.sessions.filter(s=>s.client_id===c.id&&live(s));const d=s=>new Date(s.start_at);
+    const thisW=ss.filter(s=>d(s)>=ws&&d(s)<nw),nextW=ss.filter(s=>d(s)>=nw&&d(s)<nw2);
+    const past=ss.filter(s=>d(s)<=now).sort((a,b)=>a.start_at<b.start_at?1:-1)[0],next=ss.filter(s=>d(s)>now).sort((a,b)=>a.start_at<b.start_at?-1:1)[0];
+    return {thisW,nextW,past,next}};
+  const all=S.clients.map(c=>({c,...info(c)})).sort((a,b)=>a.c.name.localeCompare(b.c.name,'he'));
+  const act=all.filter(x=>x.c.status==='active');
+  const F={active:act,notw:act.filter(x=>!x.thisW.length),notnext:act.filter(x=>!x.nextW.length),inactive:all.filter(x=>x.c.status!=='active'),all};
+  const list=F[cliF]||act;
+  const when=s=>s?`${DAYS[new Date(s.start_at).getDay()]} ${fmtD(s.start_at)} ${fmtT(s.start_at)}`:'—';
+  const chip=(l,yes,no)=>l.length?`<span class="chip c-ok">${yes} · ${l.length}</span>`:`<span class="chip c-warn">${no}</span>`;
+  return head('מתאמנים',`${act.length} פעילים · לפי היומן`,`<button class="btn pri" data-act="newClient">+ מתאמן</button>`)+
+  `<div class="grid kpis">${kpi('פעילים',act.length,'')}${kpi('שובצו השבוע',act.length-F.notw.length,F.notw.length+' לא שובצו',F.notw.length?'warn':'ok')}${kpi('שובצו לשבוע הבא',act.length-F.notnext.length,F.notnext.length+' לא שובצו',F.notnext.length?'warn':'ok')}</div>
+  <div class="tools" style="margin-top:14px">${[['active','פעילים'],['notw','לא שובצו השבוע'],['notnext','לא שובצו לשבוע הבא'],['inactive','לא פעילים'],['all','הכל']].map(([k,t])=>`<button class="btn" data-clif="${k}" aria-pressed="${cliF===k}">${t} (${F[k].length})</button>`).join('')}</div>
+  <div class="tbl"><table><thead><tr><th>שם</th><th>מצב</th><th>השבוע</th><th>שבוע הבא</th><th class="hide-m">אימון אחרון</th><th class="hide-m">אימון הבא</th></tr></thead><tbody>${list.map(x=>`<tr><td class="click" data-act="editClient" data-id="${x.c.id}"><div class="v">${esc(x.c.name)}</div></td>
+   <td><button class="btn sm ${x.c.status==='active'?'pri':''}" data-cstat="${x.c.id}">${x.c.status==='active'?'פעיל':'לא פעיל'}</button></td>
+   <td>${x.c.status==='active'?chip(x.thisW,'שובץ','לא שובץ'):'—'}</td><td>${x.c.status==='active'?chip(x.nextW,'שובץ','לא שובץ'):'—'}</td>
+   <td class="hide-m d">${when(x.past)}</td><td class="hide-m d">${when(x.next)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">אין מתאמנים</td></tr>'}</tbody></table></div>`;
 }
 
 function schedule(){
@@ -639,7 +655,7 @@ const ACT={
   expCsv:()=>{const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const L=S.expenses.filter(x=>exAll||mKey(x.spent_at)===period).sort((a,b)=>a.spent_at<b.spent_at?-1:1);
     const rows=[['תאריך','ספק','קטגוריה','מקור','סכום','חשבונית','הערה'],...L.map(x=>[x.spent_at,x.vendor,x.category,x.method,x.amount,({missing:'חסרה',received:'התקבלה',na:'לא נדרש'})[x.invoice]||'',x.notes])];
     const blob=new Blob(['\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='הוצאות-'+(exAll?'הכל':period)+'.csv';a.click()},
-  newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),client:id=>clientDlg(cById(id)),
+  newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),editClient:id=>clientEdit(cById(id)),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
   sync:async(_,b)=>{b&&(b.disabled=true);const {error}=await SB.functions.invoke('sync-calendar');b&&(b.disabled=false);if(error)return toast('הסנכרון נכשל');toast('היומן סונכרן');reload()},
   newTask:async()=>{const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null}),'נוסף');reload()},
