@@ -195,7 +195,7 @@ const I={
  tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/>'
 };
 I.cal=I.schedule;I.tax=I.acct;I.pay=I.pay;
-const ROUTES=[['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות'],['schedule','לו״ז ושיבוץ']];
+const ROUTES=[['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים ולו״ז'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
 const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
 let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='cal',period=null,filter='active',wk=1;
 const now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
@@ -259,7 +259,7 @@ function payers(){
 /* ---------- shell ---------- */
 function nav(){
   const openN=tillToday().filter(r=>!r.payer.not_yet_at).length,noInv=S.payments.filter(p=>p.invoice_status==='queued'||p.reportable==null).length;
-  const badge={pay:openN,schedule:S.events.length,income:noInv};
+  const badge={pay:openN,clients:S.events.length,income:noInv};
   const item=([k,t])=>`<a href="#${k}" ${route===k?'aria-current="page"':''}>${ico(k==='acct'?'acct':k)}${t}${badge[k]?`<span class="badge">${badge[k]}</span>`:''}</a>`;
   $('#nav').innerHTML=ROUTES.map(item).join('');$('#mgrid').innerHTML=ROUTES.map(item).join('');
   $('#mTitle').textContent=ROUTES.find(r=>r[0]===route)[1];
@@ -304,6 +304,7 @@ function bind(){
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
   $$('[data-bi]').forEach(b=>b.onclick=()=>{bi=b.dataset.bi;render()});
   $$('[data-clif]').forEach(b=>b.onclick=()=>{cliF=b.dataset.clif;render()});
+  $$('[data-clitab]').forEach(b=>b.onclick=()=>{cliTab=b.dataset.clitab;render()});
   $$('select[data-cstat]').forEach(b=>b.onchange=async()=>{const c=cById(b.dataset.cstat);c.status=b.value;await db(SB.from('clients').update({status:b.value}).eq('id',c.id),'נשמר');render()});
   $$('[data-exall]').forEach(b=>b.addEventListener('click',()=>{exAll=b.dataset.exall==='1';render()}));
   $$('[data-exf]').forEach(b=>b.onclick=()=>{exF=b.dataset.exf;render()});
@@ -371,8 +372,10 @@ function pay(){
 }
 function payTable(list,full){return `<div class="tbl"><table><thead><tr><th>תאריך</th><th>ממי</th><th class="hide-m">מאיפה</th>${full?'<th class="hide-m">סוג</th>':''}<th>סכום</th>${full?'<th>דיווח</th>':''}<th>חשבונית</th></tr></thead><tbody>${list.map(p=>{const r=REP[String(p.reportable)]||REP.null;return `<tr class="click ${p.reportable===false?'dim':''}" data-act="editPay" data-id="${p.id}"><td class="num">${fmtD(p.paid_at)}</td><td><div class="v">${esc(who(p))}</div>${p.notes?`<div class="d">${esc(p.notes)}</div>`:''}</td><td class="hide-m"><span class="chip c-na">${SRC[p.source]||METHOD[p.method]||''}</span></td>${full?`<td class="hide-m">${CAT[p.category]||''}</td>`:''}<td class="amt ${p.reportable===false?'':'ok'}">${ils(p.amount)}</td>${full?`<td><span class="chip ${r[1]}">${r[0]}</span></td>`:''}<td><span class="chip ${INV[p.invoice_status][1]}">${INV[p.invoice_status][0]}${p.invoice_number?' '+esc(p.invoice_number):''}</span>${S.docs.some(d=>d.payment_id===p.id)?' 📎':''}</td></tr>`}).join('')||`<tr><td colspan="${full?7:5}" class="empty">אין תשלומים בחודש הזה</td></tr>`}</tbody></table></div>`}
 
-let cliF='active';
+let cliF='active',cliTab='sched';
+const cliTabs=()=>`<div class="months" role="group" style="margin-bottom:14px">${[['sched','לו״ז ושיבוץ'],['list','רשימת מתאמנים']].map(([k,t])=>`<button data-clitab="${k}" aria-pressed="${cliTab===k}">${t}</button>`).join('')}</div>`;
 function clients(){
+  if(cliTab==='sched')return schedule();
   const ws=new Date(now);ws.setHours(0,0,0,0);ws.setDate(ws.getDate()-ws.getDay());
   const nw=new Date(ws);nw.setDate(nw.getDate()+7);const nw2=new Date(nw);nw2.setDate(nw2.getDate()+7);
   const live=s=>!s.deleted_from_calendar;
@@ -386,7 +389,7 @@ function clients(){
   const list=F[cliF]||act;
   const when=s=>s?`${DAYS[new Date(s.start_at).getDay()]} ${fmtD(s.start_at)} ${fmtT(s.start_at)}`:'—';
   const chip=(l,yes,no)=>l.length?`<span class="chip c-ok">${yes} · ${l.length}</span>`:`<span class="chip c-warn">${no}</span>`;
-  return head('מתאמנים',`${act.length} פעילים · ${F.occasional.length} מזדמנים · ${F.paused.length} בהשהייה · לפי היומן`,`<button class="btn pri" data-act="newClient">+ מתאמן</button>`)+
+  return head('מתאמנים ולו״ז',`${act.length} פעילים · ${F.occasional.length} מזדמנים · ${F.paused.length} בהשהייה · לפי היומן`,`<button class="btn pri" data-act="newClient">+ מתאמן</button>`)+cliTabs()+
   `<div class="grid kpis">${kpi('פעילים',act.length,F.occasional.length+' מזדמנים · '+F.paused.length+' בהשהייה')}${kpi('שובצו השבוע',act.length-F.notw.length,F.notw.length+' לא שובצו',F.notw.length?'warn':'ok')}${kpi('שובצו לשבוע הבא',act.length-F.notnext.length,F.notnext.length+' לא שובצו',F.notnext.length?'warn':'ok')}</div>
   <div class="tools" style="margin-top:14px">${[['active','פעילים'],['notw','לא שובצו השבוע'],['notnext','לא שובצו לשבוע הבא'],['occasional','מזדמנים'],['paused','בהשהייה'],['inactive','לא פעילים'],['all','הכל']].map(([k,t])=>`<button class="btn" data-clif="${k}" aria-pressed="${cliF===k}">${t} (${F[k].length})</button>`).join('')}</div>
   <div class="tbl"><table><thead><tr><th>שם</th><th>מצב</th><th>השבוע</th><th>שבוע הבא</th><th class="hide-m">אימון אחרון</th><th class="hide-m">אימון הבא</th></tr></thead><tbody>${list.map(x=>`<tr><td class="click" data-act="editClient" data-id="${x.c.id}"><div class="v">${esc(x.c.name)}</div></td>
@@ -403,7 +406,7 @@ function schedule(){
   const not=active.filter(c=>!booked.has(c.id));
   const byDay={};ses.forEach(s=>{const d=new Date(s.start_at).getDay();(byDay[d]=byDay[d]||[]).push(s)});
   const lbl={'-1':'שבוע שעבר','0':'השבוע','1':'שבוע הבא'};
-  return head('לו״ז ושיבוץ',`${fmtD(from)}–${fmtD(new Date(to-1))} · מסונכרן מהיומן כל שעה`,`<button class="btn" data-act="sync">סנכרון עכשיו</button>`)+
+  return head('מתאמנים ולו״ז',`${fmtD(from)}–${fmtD(new Date(to-1))} · מסונכרן מהיומן כל שעה`,`<button class="btn" data-act="sync">סנכרון עכשיו</button>`)+cliTabs()+
   `<div class="tools">${[-1,0,1].map(w=>`<button class="btn" data-w="${w}" aria-pressed="${wk===w}">${lbl[w]}</button>`).join('')}</div>
   <div class="grid kpis">${kpi('אימונים בשבוע',ses.length,'')}${kpi('משובצים',booked.size,'מתאמנים')}${kpi('פעילים בלי אימון',not.length,'',not.length?'warn':'ok')}</div>
   <div class="grid two" style="margin-top:14px"><div class="card"><h2>השבוע ביומן</h2><p class="cap">לחיצה על אימון: שינוי סטטוס או מחיר</p>${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div style="margin-bottom:10px"><div class="d" style="font-weight:600;color:var(--muted);margin-bottom:4px">יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</div><div class="sess">${byDay[d].sort((a,b)=>a.start_at<b.start_at?-1:1).map(s=>`<span data-act="sess" data-id="${s.id}" class="${s.status==='free'?'free':s.status==='scheduled'?'plan':''}">${fmtT(s.start_at)} ${esc(cById(s.client_id)?.name.split(' ')[0])}</span>`).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}</div>
@@ -667,7 +670,7 @@ const ACT={
 };
 
 /* ---------- boot ---------- */
-function go(){const h=(location.hash||'#cal').slice(1);route=ROUTES.some(r=>r[0]===h)||h==='overview'?h:'cal';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
+function go(){let h=(location.hash||'#cal').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)||h==='overview'?h:'cal';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
 $('#mMenu').onclick=()=>$('#msheet').hidden=false;$('#mClose').onclick=()=>$('#msheet').hidden=true;$('#msheet').onclick=e=>{if(e.target.id==='msheet')$('#msheet').hidden=true};
 $('#fileIn').onchange=e=>{upload([...e.target.files]);e.target.value=''};
 $('#syncBtn').onclick=e=>ACT.sync(null,e.target);
