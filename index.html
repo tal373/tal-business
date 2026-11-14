@@ -303,6 +303,14 @@ function bind(){
   $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   $$('[data-w]').forEach(b=>b.onclick=()=>{wk=+b.dataset.w;render()});
   $$('[data-bi]').forEach(b=>b.onclick=()=>{bi=b.dataset.bi;render()});
+  $$('[data-exall]').forEach(b=>b.addEventListener('click',()=>{exAll=b.dataset.exall==='1';render()}));
+  $$('[data-exf]').forEach(b=>b.onclick=()=>{exF=b.dataset.exf;render()});
+  $$('[data-ecatf]').forEach(b=>b.onclick=()=>{exCat=b.dataset.ecatf;render()});
+  $$('[data-exclear]').forEach(b=>b.onclick=()=>{exCat=null;render()});
+  {const q=$('#exQ');if(q)q.oninput=()=>{exQ=q.value;const pos=q.selectionStart;render();const n=$('#exQ');n.focus();n.setSelectionRange(pos,pos)}}
+  $$('select[data-ecat]').forEach(x=>x.onchange=async()=>{const e=S.expenses.find(y=>y.id===x.dataset.ecat);e.category=x.value;await db(SB.from('expenses').update({category:x.value}).eq('id',e.id),'נשמר');render()});
+  $$('select[data-einv]').forEach(x=>x.onchange=async()=>{const e=S.expenses.find(y=>y.id===x.dataset.einv);e.invoice=x.value;await db(SB.from('expenses').update({invoice:x.value}).eq('id',e.id),'נשמר');render()});
+  $$('[data-eup]').forEach(b=>b.onclick=()=>{const id=b.dataset.eup,e=S.expenses.find(y=>y.id===id);const i=document.createElement('input');i.type='file';i.accept='application/pdf,image/*';i.onchange=async()=>{if(i.files[0]){await upload([i.files[0]],{expense_id:id,kind:'expense',month:mKey(e.spent_at)});if(e.invoice==='missing'){await SB.from('expenses').update({invoice:'received'}).eq('id',id)}reload()}};i.click()});
   $$('select[data-svc]').forEach(x=>x.onchange=async()=>{const p=S.payments.find(y=>y.id===x.dataset.svc);p.service=x.value;await db(SB.from('payments').update({service:x.value}).eq('id',p.id),'נשמר: '+x.value);const c=cById(p.client_id);if(c&&!c.service){c.service=x.value;await SB.from('clients').update({service:x.value}).eq('id',c.id)}});
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
@@ -430,18 +438,40 @@ function splitDlg(p){
 }
 
 const GREECE='הזרמה לעסק ביוון';
+const ECATS=['שכר דירה','סופר ומזון','מסעדות וקפה','בית','פארם','ביגוד והנעלה','רכב: דלק וחניה','תחבורה','טיסות ונסיעות לחו״ל','חו״ל','ביטוח','פנסיה','מיסים','ארנונה ומים','ועד בית','עמלות בנק','אפל','העברות לאנשים (ביט/פייבוקס)','עסק: רו"ח והנה"ח','עסק: שיווק ותוכנות','עסק: ציוד','לבירור',GREECE];
+const EINV=[['missing','חסרה'],['received','התקבלה'],['na','לא נדרש']];
+let exF='all',exQ='',exCat=null,exAll=false;
 function expenses(){
-  const all=S.expenses.filter(x=>mKey(x.spent_at)===period).sort((a,b)=>a.spent_at<b.spent_at?-1:1);
-  const list=all.filter(x=>x.category!==GREECE),gr=all.filter(x=>x.category===GREECE);
-  const sum=a=>a.reduce((t,x)=>t+ +x.amount,0),tot=sum(list);
-  const row=x=>`<tr class="click" data-act="editExp" data-id="${x.id}"><td class="num">${fmtD(x.spent_at)}</td><td><div class="v">${esc(x.vendor)}</div>${x.notes?`<div class="d">${esc(x.notes)}</div>`:''}</td><td class="hide-m">${esc(x.category||'')}</td><td class="amt">${ils(x.amount)}</td><td>${x.invoice==='received'?'<span class="chip c-ok">התקבלה</span>':x.invoice==='na'?'<span class="chip c-na">לא נדרש</span>':'<span class="chip c-bad">חסרה</span>'}${S.docs.some(d=>d.expense_id===x.id)?' 📎':''}</td></tr>`;
-  const tbl=(l,empty,t)=>`<div class="tbl"><table><thead><tr><th>תאריך</th><th>ספק</th><th class="hide-m">קטגוריה</th><th>סכום</th><th>חשבונית</th></tr></thead><tbody>${l.map(row).join('')||`<tr><td colspan="5" class="empty">${empty}</td></tr>`}</tbody>${l.length?`<tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="3">סה״כ</td><td class="amt">${ils(t)}</td><td></td></tr></tfoot>`:''}</table></div>`;
-  return head('הוצאות','כל הוצאה בשורה לפי תאריך, עם חשבונית מצורפת',monthSwitch())+
-  `<div class="grid kpis">${kpi('הוצאות ב'+mLabel(period),ils(tot),list.length+' שורות · בלי יוון')}${kpi('בלי חשבונית',list.filter(x=>x.invoice==='missing').length,'',list.some(x=>x.invoice==='missing')?'bad':'ok')}${gr.length?kpi('הזרמה לעסק ביוון',ils(sum(gr)),'בנפרד — לא בסה״כ'):''}</div>
-  <div class="tools" style="margin-top:14px"><button class="btn pri" data-act="newExp">+ הוצאה</button></div>
-  ${tbl(list,'אין הוצאות בחודש הזה',tot)}
-  ${gr.length?`<div class="sec"><h3>הזרמה לעסק ביוון</h3><span>חישוב נפרד · לא נכלל בהוצאות</span></div>${tbl(gr,'',sum(gr))}`:''}`;
+  const inP=x=>exAll||mKey(x.spent_at)===period;
+  const all=S.expenses.filter(inP);
+  const R=all.filter(x=>x.category!==GREECE),gr=all.filter(x=>x.category===GREECE);
+  const sum=a=>a.reduce((t,x)=>t+ +x.amount,0);
+  let T=R.filter(x=>exF==='all'||(exF==='miss'&&x.invoice==='missing')||(exF==='rev'&&x.category==='לבירור')||(exF==='biz'&&/^עסק/.test(x.category||'')));
+  if(exCat)T=T.filter(x=>x.category===exCat);
+  if(exQ)T=T.filter(x=>((x.vendor||'')+' '+(x.notes||'')+' '+(x.category||'')).includes(exQ));
+  T.sort((a,b)=>a.spent_at<b.spent_at?-1:a.spent_at>b.spent_at?1:b.amount-a.amount);
+  const cats=[...new Set(R.map(x=>x.category||'לבירור'))].map(c=>[c,sum(R.filter(x=>(x.category||'לבירור')===c))]).sort((a,b)=>b[1]-a[1]),mx=Math.max(1,...cats.map(c=>c[1]));
+  const top=R.slice().sort((a,b)=>b.amount-a.amount).slice(0,8);
+  const catSel=x=>`<select class="s" data-ecat="${x.id}" aria-label="קטגוריה">${[...new Set([...ECATS,x.category||''])].filter(Boolean).map(c=>`<option ${c===x.category?'selected':''}>${esc(c)}</option>`).join('')}</select>`;
+  const invSel=x=>`<select class="s" data-einv="${x.id}" aria-label="חשבונית">${EINV.map(([k,t])=>`<option value="${k}" ${k===x.invoice?'selected':''}>${t}</option>`).join('')}</select>`;
+  const files=x=>S.docs.filter(d=>d.expense_id===x.id).map(d=>`<button class="lnk" data-act="doc" data-id="${d.id}">📎</button>`).join(' ')+` <button class="btn sm" data-eup="${x.id}" title="צירוף חשבונית">צירוף</button>`;
+  const row=x=>`<tr class="${x.category==='לבירור'?'dim':''}"><td class="num" style="white-space:nowrap">${fmtD(x.spent_at)}</td><td class="click" data-act="editExp" data-id="${x.id}"><div class="v">${esc(x.vendor)}</div>${x.notes?`<div class="d">${esc(x.notes)}</div>`:''}</td><td>${catSel(x)}</td><td class="hide-m" style="white-space:nowrap;color:var(--muted);font-size:13px">${esc(x.method||'')}</td><td>${invSel(x)}</td><td style="white-space:nowrap">${files(x)}</td><td class="amt">${ils(x.amount)}</td></tr>`;
+  const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-p="${k}" data-exall="0" aria-pressed="${!exAll&&period===k}">${mLabel(k)}</button>`).join('')}<button data-exall="1" aria-pressed="${exAll}">הכל</button></div>`;
+  return head('הוצאות',`${exAll?'כל התקופה':mLabel(period)} · ${ils(sum(R))}${gr.length?' · יוון בנפרד':''}`,sw)+
+  `<div class="grid kpis">${kpi('הוצאות',ils(sum(R)),R.length+' שורות · בלי יוון')}${kpi('חסרה חשבונית (עסקי)',R.filter(x=>x.invoice==='missing').length,ils(sum(R.filter(x=>x.invoice==='missing'))),R.some(x=>x.invoice==='missing')?'bad':'ok')}${kpi('לבירור',R.filter(x=>x.category==='לבירור').length,'',R.some(x=>x.category==='לבירור')?'warn':'ok')}${gr.length?kpi('הזרמה לעסק ביוון',ils(sum(gr)),'בנפרד — לא בסה״כ'):''}</div>
+  <div class="grid two" style="margin-top:14px">
+   <div class="card"><h2>לאן הלך הכסף</h2><p class="cap">לחיצה מסננת את הטבלה לפי הקטגוריה</p><div class="bars">${cats.map(([c,v])=>`<div class="bar" data-ecatf="${esc(c)}" role="button" tabindex="0" style="grid-template-columns:150px minmax(0,1fr) auto;cursor:pointer"><span class="t">${esc(c)}</span><span class="track"><span class="fill ${c==='לבירור'?'exp':''}" style="width:${v/mx*100}%"></span></span><span class="num">${ils(v)}</span></div>`).join('')||'<div class="empty">אין הוצאות</div>'}</div></div>
+   <div class="card"><h2>הכי גדולות</h2><p class="cap">שמונה ההוצאות הגדולות</p>${top.map(x=>`<div class="alert" style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(x.vendor)} <span class="d">· ${fmtD(x.spent_at)} · ${esc(x.category||'')}</span></span><b class="num">${ils(x.amount)}</b></div>`).join('')||'<div class="empty">—</div>'}</div>
+  </div>
+  <div class="tools" style="margin-top:14px">${[['all','הכל'],['miss','חסרה חשבונית'],['biz','עסקי'],['rev','לבירור']].map(([k,t])=>`<button class="btn" data-exf="${k}" aria-pressed="${exF===k}">${t}</button>`).join('')}
+   ${exCat?`<button class="btn" aria-pressed="true" data-exclear="1">${esc(exCat)} ✕</button>`:''}
+   <input class="f" id="exQ" type="search" placeholder="חיפוש ספק" value="${esc(exQ)}" style="flex:1 1 150px;max-width:240px">
+   <button class="btn sm" data-act="expCsv">ייצוא לקובץ</button><button class="btn pri" data-act="newExp" style="margin-inline-start:auto">+ הוצאה</button></div>
+  <div class="tbl"><table style="min-width:820px"><thead><tr><th>תאריך</th><th>ספק / הוצאה</th><th>קטגוריה</th><th class="hide-m">מקור</th><th>חשבונית</th><th>מסמכים</th><th style="text-align:left">סכום</th></tr></thead><tbody>${T.map(row).join('')||'<tr><td colspan="7" class="empty">אין שורות שמתאימות</td></tr>'}</tbody>
+  <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="6">${T.length} שורות</td><td class="amt">${ils(sum(T))}</td></tr></tfoot></table></div>
+  ${gr.length?`<div class="sec"><h3>הזרמה לעסק ביוון</h3><span>חישוב נפרד · לא נכלל בהוצאות</span></div><div class="tbl"><table><thead><tr><th>תאריך</th><th>ממה</th><th style="text-align:left">סכום</th></tr></thead><tbody>${gr.map(x=>`<tr class="click" data-act="editExp" data-id="${x.id}"><td class="num">${fmtD(x.spent_at)}</td><td><div class="v">${esc(x.vendor)}</div>${x.notes?`<div class="d">${esc(x.notes)}</div>`:''}</td><td class="amt">${ils(x.amount)}</td></tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ יוון</td><td class="amt">${ils(sum(gr))}</td></tr></tfoot></table></div>`:''}`;
 }
+
 function docs(){
   const list=S.docs.filter(d=>d.month===period);
   const pays=S.payments.filter(p=>mKey(p.paid_at)===period),exps=S.expenses.filter(x=>mKey(x.spent_at)===period);
@@ -606,6 +636,9 @@ const ACT={
     window.open('https://wbfbamldcpa.azurewebsites.net/','webenefit');
     await db(SB.from('payments').update({invoice_status:'queued'}).eq('id',id));reload()},
   bill:id=>{const t=billText(id);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('ההודעה הועתקה — מדביקים בוואטסאפ'),()=>dlg(`<h2>הודעת חיוב</h2><textarea class="f" rows="10">${esc(t)}</textarea>`))},
+  expCsv:()=>{const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const L=S.expenses.filter(x=>exAll||mKey(x.spent_at)===period).sort((a,b)=>a.spent_at<b.spent_at?-1:1);
+    const rows=[['תאריך','ספק','קטגוריה','מקור','סכום','חשבונית','הערה'],...L.map(x=>[x.spent_at,x.vendor,x.category,x.method,x.amount,({missing:'חסרה',received:'התקבלה',na:'לא נדרש'})[x.invoice]||'',x.notes])];
+    const blob=new Blob(['\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='הוצאות-'+(exAll?'הכל':period)+'.csv';a.click()},
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
   sync:async(_,b)=>{b&&(b.disabled=true);const {error}=await SB.functions.invoke('sync-calendar');b&&(b.disabled=false);if(error)return toast('הסנכרון נכשל');toast('היומן סונכרן');reload()},
