@@ -466,26 +466,35 @@ function cardPos(c){ // package position from the calendar (title numbers like "
   if(n<=covered)return {card:0,used:k-1+n,size};
   const n2=n-covered;return {card:Math.ceil(n2/size),used:((n2-1)%size)+1,size};
 }
-function cardsOf(c){ // every card on its own, from the calendar
-  const ss=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&new Date(s.start_at)>=FROM).sort((a,b)=>a.start_at<b.start_at?-1:1);
-  const size=c.package_size||10,price=+c.price||0,k=+((ss[0]?.title||'').match(/(\d+)\s*$/)||[])[1]||1,covered=k>1?size-k+1:0;
-  const cards=[];const at=i=>i<covered?0:Math.floor((i-covered)/size)+1;
-  ss.forEach((s,i)=>{const n=at(i);(cards[n]=cards[n]||{idx:n,ses:[]}).ses.push(s)});
-  const L=cards.filter(Boolean).map(x=>{const past=x.ses.filter(s=>new Date(s.start_at)<=now),cap=x.idx===0?covered:size;
-    return {...x,size:x.idx===0?size:size,used:x.idx===0?(k-1)+past.length:past.length,planned:x.ses.length-past.length,amount:size*price,paid:x.idx===0||!!isSettled(c.id,'card-'+x.idx),done:(x.idx===0?(k-1)+past.length:past.length)>=size}});
-  if(!L.length)L.push({idx:1,ses:[],size,used:0,planned:0,amount:size*price,paid:!!isSettled(c.id,'card-1'),done:false});
-  const cur=L[L.length-1];
-  // pace: average days between past sessions -> when the current card ends and the next one is due
-  const past=ss.filter(s=>new Date(s.start_at)<=now),gap=past.length>1?(new Date(past.at(-1).start_at)-new Date(past[0].start_at))/(past.length-1):7*864e5;
-  const left=Math.max(0,size-cur.used),endAt=new Date(Math.max(+now,past.length?+new Date(past.at(-1).start_at):+now)+left*gap);
-  return {cards:L,cur,next:{idx:cur.idx+1,amount:size*price,at:endAt,left},size,price};
+function cardsOf(c){ // every card on its own. Only sessions that already happened fill a card; future ones are "ביומן".
+  const all=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&new Date(s.start_at)>=FROM).sort((a,b)=>a.start_at<b.start_at?-1:1);
+  const past=all.filter(s=>new Date(s.start_at)<=now),future=all.filter(s=>new Date(s.start_at)>now);
+  const size=c.package_size||10,price=+c.price||0,chunks=[];
+  if(c.pkg_start){ // anchor: the current card started on pkg_start
+    const st=new Date(c.pkg_start+'T00:00'),before=past.filter(s=>new Date(s.start_at)<st),after=past.filter(s=>new Date(s.start_at)>=st);
+    const back=[];for(let i=before.length;i>0;i-=size)back.unshift(before.slice(Math.max(0,i-size),i));
+    back.forEach((ch,i)=>chunks.push({ses:ch,old:i===0&&ch.length<size}));
+    for(let i=0;i<after.length;i+=size)chunks.push({ses:after.slice(i,i+size)});
+    if(!after.length||after.length%size===0)chunks.push({ses:[],start:after.length?null:c.pkg_start});
+  }else{
+    const k=+((all[0]?.title||'').match(/(\d+)\s*$/)||[])[1]||1,covered=k>1?size-k+1:0;
+    if(covered)chunks.push({ses:past.slice(0,covered),old:true});
+    for(let i=covered;i<past.length;i+=size)chunks.push({ses:past.slice(i,i+size)});
+    if(chunks.length&&chunks.at(-1).ses.length>=size||!chunks.length)chunks.push({ses:[]});
+  }
+  const L=chunks.map((ch,i)=>{const key='card-'+(ch.ses[0]?.start_at?.slice(0,10)||ch.start||'next');
+    return {n:i+1,ses:ch.ses,old:!!ch.old,used:ch.ses.length,size,amount:size*price,key,paid:ch.old||!!isSettled(c.id,key)}});
+  const cur=L[L.length-1];cur.planned=Math.min(future.length,size-cur.used);cur.future=future.slice(0,cur.planned);
+  const gap=past.length>1?(new Date(past.at(-1).start_at)-new Date(past[0].start_at))/(past.length-1):4*864e5;
+  const left=size-cur.used,endAt=future[left-1]?new Date(future[left-1].start_at):new Date(+now+left*gap);
+  return {cards:L,cur,next:{amount:size*price,at:endAt,left},size,price};
 }
 function collectRows(m){
   const pays=S.clients.filter(c=>!c.payer_id&&c.status!=='inactive'&&c.status!=='lead');
   return pays.map(c=>{const mem=membersOf(c.id).map(x=>x.id);
     const ss=S.sessions.filter(s=>mem.includes(s.client_id)&&charged(s)&&mKey(s.start_at)===m&&new Date(s.start_at)<=now);
     const amt=ss.reduce((t,s)=>t+ +s.price,0),n=ss.length;
-    if(c.billing==='package'){const p=cardPos(c),key='card-'+p.card,paid=p.card===0||!!isSettled(c.id,key);return {c,type:'package',n,amt,p,key,paid,show:true,due:paid?0:(+c.price||0)*p.size}}
+    if(c.billing==='package'){const X=cardsOf(c),p={used:X.cur.used,size:X.size},paid=X.cur.paid;return {c,type:'package',n,amt,p,key:X.cur.key,paid,show:true,due:paid?0:X.cur.amount}}
     const paid=!!isSettled(c.id,m);return {c,type:c.billing,n,amt,key:m,paid,show:n>0||c.status==='active',due:paid?0:amt};
   }).filter(r=>r.show).sort((a,b)=>a.c.name.localeCompare(b.c.name,'he'));
 }
@@ -500,12 +509,12 @@ function pay(){
   const btn=r=>`<button class="btn sm ${r.paid?'pri':''}" data-col="${r.c.id}|${r.key}">${r.paid?'✓ שולם':'לא שולם'}</button>`;
   const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-colm="${k}" aria-pressed="${m===k}">${mLabel(k)}</button>`).join('')}</div>`;
   return head('גבייה',`כל מתאמן לפי התנאים שלו · ${mLabel(m)}${m===cur?' (עד היום)':''}`,sw)+
-  `<div class="grid kpis">${kpi('שילמו',R.filter(r=>r.paid).length,'מתוך '+R.length)}${kpi('עוד לא שילמו',unpaid.length,uSum?ils(uSum)+' (בלי כרטיסיות)':'',unpaid.length?'warn':'ok')}${(()=>{const P=R.filter(r=>r.type==='package').map(r=>cardsOf(r.c));const unpaidCards=P.reduce((t,X)=>t+X.cards.filter(c=>c.idx>0&&!c.paid).reduce((a,c)=>a+c.amount,0),0);const end=new Date(now.getFullYear(),now.getMonth()+1,1);const nextIn=P.filter(X=>X.next.at<end).reduce((t,X)=>t+X.next.amount,0);return kpi('צפוי להיכנס',ils(uSum+unpaidCards+nextIn),'סוף חודש '+ils(uSum)+' · כרטיסיות '+ils(unpaidCards+nextIn))})()}</div>
+  `<div class="grid kpis">${kpi('שילמו',R.filter(r=>r.paid).length,'מתוך '+R.length)}${kpi('עוד לא שילמו',unpaid.length,uSum?ils(uSum)+' (בלי כרטיסיות)':'',unpaid.length?'warn':'ok')}${(()=>{const P=R.filter(r=>r.type==='package').map(r=>cardsOf(r.c));const unpaidCards=P.reduce((t,X)=>t+X.cards.filter(c=>!c.old&&!c.paid).reduce((a,c)=>a+c.amount,0),0);const end=new Date(now.getFullYear(),now.getMonth()+1,1);const nextIn=P.filter(X=>X.next.at<end).reduce((t,X)=>t+X.next.amount,0);return kpi('צפוי להיכנס',ils(uSum+unpaidCards+nextIn),'סוף חודש '+ils(uSum)+' · כרטיסיות '+ils(unpaidCards+nextIn))})()}</div>
   ${(()=>{const P=R.filter(r=>r.type==='package');if(!P.length)return '';return `<div class="sec"><h3>כרטיסיות</h3><span>כל כרטיסייה בנפרד · ${P.length} מתאמנים</span></div>`+P.map(r=>{const X=cardsOf(r.c);
      return `<div class="card" style="margin-bottom:10px"><h2>${esc(r.c.name)} <span class="chip c-na">כרטיסייה של ${X.size} · ${ils(X.price)} לאימון · ${ils(X.size*X.price)}</span></h2>
      <div class="tbl" style="margin-top:8px"><table><thead><tr><th>כרטיסייה</th><th>ניצול</th><th class="hide-m">תאריכים</th><th style="text-align:left">סכום</th><th></th></tr></thead><tbody>
-     ${X.cards.map(cd=>`<tr><td class="v">${cd.idx===0?'התחילה לפני ספטמבר':'#'+cd.idx}${cd===X.cur?' <span class="chip c-warn">נוכחית</span>':''}</td><td class="num">${cd.used} / ${cd.size}${cd.planned?` <span class="d">+${cd.planned} ביומן</span>`:''}</td><td class="hide-m d">${cd.ses.map(s=>fmtD(s.start_at)).join(' · ')||'—'}</td><td class="amt">${cd.idx===0?'—':ils(cd.amount)}</td><td style="width:1%;white-space:nowrap">${cd.idx===0?'<span class="chip c-ok">שולם קודם</span>':`<button class="btn sm ${cd.paid?'pri':''}" data-col="${r.c.id}|card-${cd.idx}">${cd.paid?'✓ שולם':'לא שולם'}</button>`}</td></tr>`).join('')}
-     <tr style="background:var(--surface2)"><td class="v">#${X.next.idx} · הבאה</td><td class="d">${X.next.left?`עוד ${X.next.left} אימונים בנוכחית`:'הנוכחית נגמרה'}</td><td class="hide-m d">צפוי בערך ${fmtD(X.next.at)}</td><td class="amt">${ils(X.next.amount)}</td><td><span class="chip c-na">צפוי</span></td></tr>
+     ${X.cards.map(cd=>`<tr><td class="v">${cd.old?'התחילה לפני ספטמבר':'#'+cd.n}${cd===X.cur?' <span class="chip c-warn">נוכחית</span>':''}</td><td class="num">${cd.used} / ${cd.size}${cd.planned?` <span class="d">+${cd.planned} ביומן</span>`:''}</td><td class="hide-m d">${cd.ses.map(s=>fmtD(s.start_at)).join(' · ')||(cd===X.cur&&cd.future?.length?'מתחילה '+fmtD(cd.future[0].start_at):'—')}</td><td class="amt">${cd.old?'—':ils(cd.amount)}</td><td style="width:1%;white-space:nowrap">${cd.old?'<span class="chip c-ok">שולם קודם</span>':`<button class="btn sm ${cd.paid?'pri':''}" data-col="${r.c.id}|${cd.key}">${cd.paid?'✓ שולם':'לא שולם'}</button>`}</td></tr>`).join('')}
+     <tr style="background:var(--surface2)"><td class="v">#${X.cards.length+1} · הבאה</td><td class="d">${X.next.left?`עוד ${X.next.left} אימונים בנוכחית`:'הנוכחית נגמרה'}</td><td class="hide-m d">צפוי בערך ${fmtD(X.next.at)}</td><td class="amt">${ils(X.next.amount)}</td><td><span class="chip c-na">צפוי</span></td></tr>
      </tbody></table></div></div>`}).join('')})()}
   ${groups.filter(([t])=>t!=='package').map(([t,lbl])=>{const L=R.filter(r=>r.type===t);return L.length?`<div class="sec"><h3>${lbl}</h3><span>${L.length}</span></div><div class="tbl"><table><tbody>${L.map(r=>`<tr><td class="click" data-client="${r.c.id}"><div class="v">${esc(r.c.name)}</div><div class="d">${status(r)}</div></td><td style="width:1%;white-space:nowrap">${btn(r)}</td></tr>`).join('')}</tbody></table></div>`:''}).join('')}
   <p class="note d" style="margin-top:10px">סוף חודש: ספטמבר ואוקטובר סגורים. כרטיסייה: "שולם" מתייחס לכרטיסייה הנוכחית.</p>`;
