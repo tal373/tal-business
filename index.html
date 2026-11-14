@@ -429,14 +429,19 @@ function splitDlg(p){
     w.remove();reload()};
 }
 
+const GREECE='הזרמה לעסק ביוון';
 function expenses(){
-  const list=S.expenses.filter(x=>mKey(x.spent_at)===period);const tot=list.reduce((a,x)=>a+ +x.amount,0);
+  const all=S.expenses.filter(x=>mKey(x.spent_at)===period).sort((a,b)=>a.spent_at<b.spent_at?-1:1);
+  const list=all.filter(x=>x.category!==GREECE),gr=all.filter(x=>x.category===GREECE);
+  const sum=a=>a.reduce((t,x)=>t+ +x.amount,0),tot=sum(list);
+  const row=x=>`<tr class="click" data-act="editExp" data-id="${x.id}"><td class="num">${fmtD(x.spent_at)}</td><td><div class="v">${esc(x.vendor)}</div>${x.notes?`<div class="d">${esc(x.notes)}</div>`:''}</td><td class="hide-m">${esc(x.category||'')}</td><td class="amt">${ils(x.amount)}</td><td>${x.invoice==='received'?'<span class="chip c-ok">התקבלה</span>':x.invoice==='na'?'<span class="chip c-na">לא נדרש</span>':'<span class="chip c-bad">חסרה</span>'}${S.docs.some(d=>d.expense_id===x.id)?' 📎':''}</td></tr>`;
+  const tbl=(l,empty,t)=>`<div class="tbl"><table><thead><tr><th>תאריך</th><th>ספק</th><th class="hide-m">קטגוריה</th><th>סכום</th><th>חשבונית</th></tr></thead><tbody>${l.map(row).join('')||`<tr><td colspan="5" class="empty">${empty}</td></tr>`}</tbody>${l.length?`<tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="3">סה״כ</td><td class="amt">${ils(t)}</td><td></td></tr></tfoot>`:''}</table></div>`;
   return head('הוצאות','כל הוצאה בשורה לפי תאריך, עם חשבונית מצורפת',monthSwitch())+
-  `<div class="grid kpis">${kpi('הוצאות ב'+mLabel(period),ils(tot),list.length+' שורות')}${kpi('בלי חשבונית',list.filter(x=>x.invoice==='missing').length,'',list.some(x=>x.invoice==='missing')?'bad':'ok')}</div>
+  `<div class="grid kpis">${kpi('הוצאות ב'+mLabel(period),ils(tot),list.length+' שורות · בלי יוון')}${kpi('בלי חשבונית',list.filter(x=>x.invoice==='missing').length,'',list.some(x=>x.invoice==='missing')?'bad':'ok')}${gr.length?kpi('הזרמה לעסק ביוון',ils(sum(gr)),'בנפרד — לא בסה״כ'):''}</div>
   <div class="tools" style="margin-top:14px"><button class="btn pri" data-act="newExp">+ הוצאה</button></div>
-  <div class="tbl"><table><thead><tr><th>תאריך</th><th>ספק</th><th class="hide-m">קטגוריה</th><th>סכום</th><th>חשבונית</th></tr></thead><tbody>${list.map(x=>`<tr class="click" data-act="editExp" data-id="${x.id}"><td class="num">${fmtD(x.spent_at)}</td><td><div class="v">${esc(x.vendor)}</div>${x.notes?`<div class="d">${esc(x.notes)}</div>`:''}</td><td class="hide-m">${esc(x.category||'')}</td><td class="amt">${ils(x.amount)}</td><td>${x.invoice==='received'?'<span class="chip c-ok">התקבלה</span>':x.invoice==='na'?'<span class="chip c-na">לא נדרש</span>':'<span class="chip c-bad">חסרה</span>'}${S.docs.some(d=>d.expense_id===x.id)?' 📎':''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין הוצאות בחודש הזה</td></tr>'}</tbody></table></div>`;
+  ${tbl(list,'אין הוצאות בחודש הזה',tot)}
+  ${gr.length?`<div class="sec"><h3>הזרמה לעסק ביוון</h3><span>חישוב נפרד · לא נכלל בהוצאות</span></div>${tbl(gr,'',sum(gr))}`:''}`;
 }
-
 function docs(){
   const list=S.docs.filter(d=>d.month===period);
   const pays=S.payments.filter(p=>mKey(p.paid_at)===period),exps=S.expenses.filter(x=>mKey(x.spent_at)===period);
