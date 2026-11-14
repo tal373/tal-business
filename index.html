@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#16231c">
+<meta name="theme-color" content="#0d0d0d">
 <meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
@@ -141,6 +141,52 @@ select.s{font:13px var(--font-b);border:1px solid var(--line);border-radius:6px;
   .hide-m{display:none}
 }
 @media(max-width:760px){#tForm{grid-template-columns:1fr 1fr!important}#tForm label:first-child{grid-column:1/-1}}
+
+/* ---- monochrome theme: black & white only ---- */
+:root:root:root{--bg:#f7f7f7;--surface:#fff;--surface2:#f2f2f2;--ink:#111;--muted:#707070;--line:#e3e3e3;
+  --rail:#0b0b0b;--rail2:#0b0b0b;--rail-ink:#a8a8a8;--accent:#111;--accent-soft:#f2f2f2;--sand:#8c8c8c;--sand-soft:#fff;
+  --ok:#111;--ok-soft:#efefef;--warn:#111;--warn-soft:#fff;--bad:#111;--bad-soft:#111;--mute-soft:#f2f2f2;color-scheme:light}
+body{letter-spacing:.1px}
+.rail{background:#0b0b0b;border-inline-end:1px solid #000}
+.brand{font:700 19px var(--font-d);letter-spacing:.2px}
+.nav a{border-radius:8px}
+.nav a[aria-current="page"]{background:#fff;color:#0b0b0b}
+.badge{background:#fff;color:#0b0b0b}
+.nav a[aria-current="page"] .badge{background:#0b0b0b;color:#fff}
+.card,.tbl{border-radius:14px;border-color:#e6e6e6;box-shadow:0 1px 0 rgba(0,0,0,.02)}
+.kpi .l{text-transform:none;letter-spacing:.2px}
+.kpi .v{font-weight:700;letter-spacing:-.3px}
+.kpi.bad .v,.kpi.warn .v,.kpi.ok .v{color:#111}
+.kpi.bad .v::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#111;margin-inline-start:8px;vertical-align:middle}
+.kpi.warn .v::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid #111;margin-inline-start:8px;vertical-align:middle}
+.amt.bad,.amt.ok{color:#111}
+.chip{border:1px solid transparent}
+.c-bad{background:#111;color:#fff}
+.c-warn{background:#fff;color:#111;border-color:#111}
+.c-ok{background:#efefef;color:#111}
+.c-na{background:transparent;color:#707070;border-color:#e0e0e0}
+.c-sand,.c-acc{background:#f2f2f2;color:#111}
+th{background:#fafafa;letter-spacing:.2px}
+.btn{border-color:#dcdcdc}
+.btn.pri,.btn[aria-pressed="true"]{background:#111;border-color:#111;color:#fff}
+.btn.ghost{color:#111;border-color:#111}
+.drop{border-color:#bdbdbd;background:#fafafa}.drop b{color:#111}
+.lnk,.alert a{color:#111;text-decoration:underline}
+.fill{background:#111}.fill.exp{background:#9a9a9a}
+.sess span{background:#fff}
+.sess span.plan{border-style:dashed}
+.sec h3[style]{color:#111!important}
+.home-hello{font:700 clamp(24px,3.4vw,30px) var(--font-d);margin:0;letter-spacing:-.4px}
+.list{display:flex;flex-direction:column}
+.list .it{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.list .it:last-child{border-bottom:0}
+.list .it .t{color:var(--muted);font-variant-numeric:tabular-nums;font-family:var(--font-d);min-width:46px}
+.todo{display:flex;flex-direction:column;gap:8px}
+.todo a{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;color:#111;text-decoration:none;font-size:14px;background:#fff}
+.todo a b{font:700 18px var(--font-d)}
+.todo a:hover{border-color:#111}
+.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:980px){.three{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body>
@@ -195,10 +241,10 @@ const I={
  acct:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
  tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/>'
 };
-I.cal=I.schedule;I.tax=I.acct;I.pay=I.pay;
-const ROUTES=[['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים ולו״ז'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
+I.home='<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>';I.cal=I.schedule;I.tax=I.acct;I.pay=I.pay;
+const ROUTES=[['home','בית'],['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים ולו״ז'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
 const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
-let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='cal',period=null,filter='active',wk=1;
+let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='home',period=null,filter='active',wk=1;
 const now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
 
@@ -268,7 +314,43 @@ function nav(){
 function head(t,sub,right){return `<div class="top"><div><h1>${t}</h1>${sub?`<p>${sub}</p>`:''}</div>${right||''}</div>`}
 function monthSwitch(){return `<div class="months" role="group" aria-label="חודש">${PERIODS.map(k=>`<button data-p="${k}" aria-pressed="${period===k}">${mLabel(k)}</button>`).join('')}</div>`}
 function kpi(l,v,h,c){return `<div class="card kpi ${c||''}"><span class="l">${l}</span><span class="v">${v}</span><span class="h">${h||''}</span></div>`}
-function render(){nav();const f={cal,overview,pay,clients,schedule,income,expenses,docs,acct,tasks}[route];$('#main').innerHTML=f();bind();}
+function render(){nav();const f={home,cal,overview,pay,clients,schedule,income,expenses,docs,acct,tasks}[route];$('#main').innerHTML=f();bind();}
+
+
+/* ---------- home ---------- */
+function home(){
+  const hr=now.getHours(),hello=hr<12?'בוקר טוב':hr<17?'צהריים טובים':hr<21?'ערב טוב':'לילה טוב';
+  const mk=mKey(now),ws=weekStart(),nw=new Date(ws);nw.setDate(nw.getDate()+7);const nw2=new Date(nw);nw2.setDate(nw2.getDate()+7);
+  const live=S.sessions.filter(s=>!s.deleted_from_calendar),d=s=>new Date(s.start_at);
+  const monthDone=live.filter(s=>done(s)&&mKey(s.start_at)===mk&&d(s)<=now);
+  const inc=monthDone.reduce((t,s)=>t+ +s.price,0),incN=new Set(monthDone.map(sKey)).size;
+  const thisW=live.filter(s=>d(s)>=ws&&d(s)<nw),nextW=live.filter(s=>d(s)>=nw&&d(s)<nw2);
+  const t0=new Date(now);t0.setHours(0,0,0,0);const t1=new Date(t0);t1.setDate(t1.getDate()+1);
+  const today=Object.values(live.filter(s=>d(s)>=t0&&d(s)<t1).reduce((m,s)=>((m[sKey(s)]=m[sKey(s)]||[]).push(s),m),{})).sort((a,b)=>a[0].start_at<b[0].start_at?-1:1);
+  const act=S.clients.filter(c=>c.status==='active'),notNext=act.filter(c=>!nextW.some(s=>s.client_id===c.id));
+  const open=tillToday(),openSum=open.reduce((t,r)=>t+r.open,0);
+  const exp=S.expenses.filter(x=>mKey(x.spent_at)===mk&&x.category!==GREECE),expSum=exp.reduce((t,x)=>t+ +x.amount,0);
+  const {g}=taskGroups(),focus=[...g.late,...g.today];
+  const invQ=S.payments.filter(p=>p.invoice_status==='queued'||((!p.invoice_status||p.invoice_status==='none')&&['mercantile','paybox','shay'].includes(p.source)&&!['loan','family','internal','cash_unassigned'].includes(p.category))).length;
+  const cashU=S.payments.filter(p=>p.category==='cash_unassigned').length,expMiss=S.expenses.filter(x=>x.invoice==='missing').length;
+  const months=PERIODS.slice(-4).map(k=>{const L=live.filter(s=>done(s)&&mKey(s.start_at)===k&&d(s)<=now);return [k,L.reduce((t,s)=>t+ +s.price,0)]}),mx=Math.max(1,...months.map(m=>m[1]));
+  const todo=[[notNext.length,'פעילים שלא שובצו לשבוע הבא','#clients'],[S.events.length,'אירועים ביומן שלא שויכו','#clients'],[invQ,'תשלומים שמחכים לחשבונית','#income'],[cashU,'הפקדות מזומן לשיוך','#income'],[expMiss,'הוצאות בלי חשבונית','#expenses'],[focus.length,'משימות להיום ובאיחור','#tasks']].filter(x=>x[0]);
+  const nm=s=>{const c=cById(s.client_id);return c?c.name:''};
+  return `<div class="top"><div><h1 class="home-hello">${hello}, טל</h1><p>${DAYS[now.getDay()]}, ${now.getDate()} ב${HM[now.getMonth()]} ${now.getFullYear()}</p></div><button class="btn" data-act="sync">סנכרון יומן</button></div>
+  <div class="grid kpis">
+   ${kpi('הכנסה החודש לפי יומן',ils(inc),incN+' אימונים עד היום')}
+   ${kpi('אימונים השבוע',new Set(thisW.map(sKey)).size,new Set(nextW.map(sKey)).size+' בשבוע הבא')}
+   ${kpi('גבייה פתוחה',ils(openSum),open.length+' משלמים',openSum?'warn':'ok')}
+   ${kpi('הוצאות החודש',ils(expSum),exp.length+' שורות · בלי יוון')}
+   ${kpi('משימות',focus.length,g.late.length?g.late.length+' באיחור':'להיום',g.late.length?'bad':'')}
+  </div>
+  <div class="grid three" style="margin-top:14px">
+   <div class="card"><h2>היום ביומן</h2><p class="cap">${today.length?today.length+' אימונים':'אין אימונים היום'}</p><div class="list">${today.map(L=>`<div class="it"><span class="t">${fmtT(L[0].start_at)}</span><span style="flex:1">${L.length>1?(L.every(x=>isKid(x.client_id))?'קבוצת ילדים':'זוגי')+' · '+L.map(x=>esc(nm(x).split(' ')[0])).join(', '):esc(nm(L[0]))}</span></div>`).join('')||'<div class="empty">יום פנוי</div>'}</div></div>
+   <div class="card"><h2>לטיפול</h2><p class="cap">${todo.length?'מה מחכה לך':'הכול מסודר'}</p><div class="todo">${todo.map(([n,t,h])=>`<a href="${h}"><span>${t}</span><b>${n}</b></a>`).join('')||'<div class="empty">אין דברים פתוחים ✓</div>'}</div></div>
+   <div class="card"><h2>משימות להיום</h2><p class="cap">${focus.length?'באיחור ולהיום':'אין משימות להיום'}</p><div class="list">${focus.slice(0,7).map(t=>`<div class="it"><label style="display:flex;gap:8px;align-items:center;flex:1;cursor:pointer"><input type="checkbox" data-task="${t.id}">${esc(t.title)}</label>${t.due&&dOnly(t.due)<dOnly(now)?'<span class="chip c-bad">באיחור</span>':''}</div>`).join('')||'<div class="empty">—</div>'}</div><div style="margin-top:10px"><a class="lnk" href="#tasks">לכל המשימות</a></div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h2>הכנסה לפי יומן · לפי חודש</h2><p class="cap">השווי של האימונים שעשית</p><div class="bars">${months.map(([k,v])=>`<div class="bar" style="grid-template-columns:90px minmax(0,1fr) auto"><span>${mLabel(k)}</span><span class="track"><span class="fill" style="width:${v/mx*100}%"></span></span><span class="num">${ils(v)}</span></div>`).join('')}</div></div>`;
+}
 
 /* ---------- 1. income by calendar: the sessions Tal actually did ---------- */
 const done=s=>!s.deleted_from_calendar&&s.status!=='no_show';
@@ -293,7 +375,7 @@ function cal(){
   const cell=x=>x?`<td class="amt"><div>${ils(x.a)}</div><div class="d">${x.n} אימונים</div></td>`:'<td class="amt d">—</td>';
   const allM=agg(ses),allT=tot(allM);
   const tr=(r,ind)=>`<tr class="click" data-card="${r.c.id}"><td><div class="v" ${ind?'style="padding-inline-start:18px;font-weight:500"':''}>${ind?'↳ ':''}${esc(r.c.name)}</div></td>${ks.map(k=>cell(r.m[k])).join('')}${cell({n:r.n,a:r.a})}</tr>`;
-  const kidsRow=kidRows.length?`<tr class="click" data-calkids="1" style="background:var(--surface2,#f1ece2)"><td><div class="v">${calKids?'▾':'▸'} קבוצת ילדים · שלישי 15:00</div><div class="d">${kidRows.length} ילדים · אימון קבוצתי אחד בכל שבוע · לחיצה לפירוט</div></td>${ks.map(k=>cell(kidM[k])).join('')}${cell(kidT)}</tr>${calKids?kidRows.map(r=>tr(r,true)).join(''):''}`:'';
+  const kidsRow=kidRows.length?`<tr class="click" data-calkids="1" style="background:var(--surface2)"><td><div class="v">${calKids?'▾':'▸'} קבוצת ילדים · שלישי 15:00</div><div class="d">${kidRows.length} ילדים · אימון קבוצתי אחד בכל שבוע · לחיצה לפירוט</div></td>${ks.map(k=>cell(kidM[k])).join('')}${cell(kidT)}</tr>${calKids?kidRows.map(r=>tr(r,true)).join(''):''}`:'';
   return head('הכנסה לפי יומן',`כמה אימונים כל מתאמן עשה בכל חודש ובאיזה שווי — ישירות מיומן גוגל${mKey(now)===ks.at(-1)?' (החודש הנוכחי עד היום)':''}`)+
   `<div class="tbl"><table><thead><tr><th>מתאמן</th>${ks.map(k=>`<th style="text-align:left">${mLabel(k)}</th>`).join('')}<th style="text-align:left">סה״כ</th></tr></thead><tbody>${adult.map(r=>tr(r)).join('')}${kidsRow}${rows.length?'':`<tr><td colspan="${ks.length+2}" class="empty">אין אימונים</td></tr>`}</tbody>
   <tfoot><tr style="font-weight:700;background:var(--surface)"><td>סה״כ</td>${ks.map(k=>cell(allM[k])).join('')}${cell(allT)}</tr></tfoot></table></div>
@@ -731,7 +813,7 @@ const ACT={
 };
 
 /* ---------- boot ---------- */
-function go(){let h=(location.hash||'#cal').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)||h==='overview'?h:'cal';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
+function go(){let h=(location.hash||'#home').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)||h==='overview'?h:'home';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
 $('#mMenu').onclick=()=>$('#msheet').hidden=false;$('#mClose').onclick=()=>$('#msheet').hidden=true;$('#msheet').onclick=e=>{if(e.target.id==='msheet')$('#msheet').hidden=true};
 $('#fileIn').onchange=e=>{upload([...e.target.files]);e.target.value=''};
 $('#syncBtn').onclick=e=>ACT.sync(null,e.target);
