@@ -666,21 +666,23 @@ function acct(){
   const ml=m=>mLabel(m).split(' ')[0];
   const line=(t,a,cls='')=>`<tr class="${cls}"><td>${t}</td>${D.ms.map(m=>`<td class="amt">${ils(sm(a,m))}</td>`).join('')}<td class="amt"><b>${ils(sm(a))}</b></td></tr>`;
   const bycat=a=>Object.entries(a.reduce((o,x)=>(o[x.category||'—']=(o[x.category||'—']||[]).concat(x),o),{})).sort((p,q)=>sm(q[1])-sm(p[1]));
-  const prof=m=>sm(D.inc,m)-sm(D.biz,m),net=m=>prof(m)-sm(D.tax,m)-sm(D.priv,m);
+  const calS=S.sessions.filter(s=>done(s)&&new Date(s.start_at)<=now&&cById(s.client_id)&&D.ms.includes(mKey(s.start_at))),ci=m=>calS.filter(s=>!m||mKey(s.start_at)===m).reduce((t,s)=>t+(+s.price||0),0);
+  const prof=m=>ci(m)-sm(D.biz,m),net=m=>prof(m)-sm(D.tax,m)-sm(D.priv,m);
   const docs=S.docs.filter(d=>D.ms.includes(d.month));
   const noDoc=D.biz.filter(x=>!S.docs.some(d=>d.expense_id===x.id));
   const allCats=[...new Set(S.expenses.map(x=>x.category).filter(c=>c&&c!==GREECE&&c!==TAXCAT))].sort();
   return head('לרו״ח',`דוח רווח והפסד לתקופה ${BI[+bi.split('-')[1]]} · מסודר לאבירם`,sw)+
-  `<div class="grid kpis">${kpi('הכנסות מהעסק',ils(sm(D.inc)),D.inc.length+' תשלומים','ok')}${kpi('הוצאות עסקיות',ils(sm(D.biz)),D.biz.length+' הוצאות')}${kpi('רווח לפני מס',ils(prof()),'הכנסות פחות הוצאות עסקיות')}${kpi('נשאר אחרי הכל',ils(net()),'כולל הוצאות פרטיות ומיסים · בלי יוון')}</div>
-  <div class="card" style="margin-top:14px"><h2>רווח והפסד</h2><p class="cap">הכנסות = רק תשלומי מתאמנים (בלי הלוואה, משפחה והעברות פנימיות). הוצאות פרטיות, מיסים והזרמה ליוון לא נכנסים לרווח.</p>
+  `<div class="grid kpis">${kpi('הכנסות לפי היומן',ils(ci()),calS.length+' אימונים','ok')}${kpi('הוצאות עסקיות',ils(sm(D.biz)),D.biz.length+' הוצאות')}${kpi('רווח לפני מס',ils(prof()),'הכנסות פחות הוצאות עסקיות')}${kpi('נשאר אחרי הכל',ils(net()),'כולל הוצאות פרטיות ומיסים · בלי יוון')}</div>
+  <div class="card" style="margin-top:14px"><h2>רווח והפסד</h2><p class="cap">הכנסות = שווי האימונים ביומן. מתחת לטבלה — כמה נכנס בפועל לבנק, לפייבוקס ולשי.</p>
    <div class="tbl"><table><thead><tr><th></th>${D.ms.map(m=>`<th style="text-align:left">${ml(m)}</th>`).join('')}<th style="text-align:left">סה״כ</th></tr></thead><tbody>
-   ${line('<b>הכנסות</b>',D.inc)}
+   <tr><td><b>הכנסות לפי היומן</b></td>${D.ms.map(m=>`<td class="amt">${ils(ci(m))}</td>`).join('')}<td class="amt"><b>${ils(ci())}</b></td></tr>
    ${bycat(D.biz).map(([c,a])=>line('&nbsp;&nbsp;'+esc(c),a)).join('')}
    ${line('<b>סה״כ הוצאות עסקיות</b>',D.biz)}
    <tr style="font-weight:700;background:var(--surface)"><td>רווח לפני מס</td>${D.ms.map(m=>`<td class="amt">${ils(prof(m))}</td>`).join('')}<td class="amt">${ils(prof())}</td></tr>
    ${line('<span class="d">מיסים ששולמו (מע״מ, מקדמות, ביטוח לאומי)</span>',D.tax,'')}
    ${line('<span class="d">הוצאות פרטיות · לא נכנס</span>',D.priv)}
    <tr style="font-weight:700;background:var(--surface)"><td>נשאר אחרי הכל (כולל פרטיות ומיסים)</td>${D.ms.map(m=>`<td class="amt">${ils(net(m))}</td>`).join('')}<td class="amt">${ils(net())}</td></tr>
+   ${line('<span class="d">לידיעה: נכנס בפועל (בנק, פייבוקס, שי)</span>',D.inc)}
    ${D.greece.length?line('<span class="d">הזרמה לעסק ביוון · חישוב נפרד</span>',D.greece)+`<tr><td class="d">נשאר אחרי ההזרמה ליוון</td>${D.ms.map(m=>`<td class="amt">${ils(net(m)-sm(D.greece,m))}</td>`).join('')}<td class="amt">${ils(net()-sm(D.greece))}</td></tr>`:''}
    </tbody></table></div></div>
   <div class="grid two" style="margin-top:14px">
@@ -864,7 +866,8 @@ function eventDlg(e){
 }
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}
 function acctCsv(){const D=acctData(bi),q=v=>'"'+String(v??'').replace(/"/g,'""')+'"',sm=a=>a.reduce((t,r)=>t+ +r.amount,0);
-  const rows=[['דוח רווח והפסד',BI[+bi.split('-')[1]]+' '+bi.split('-')[0]],['הכנסות',sm(D.inc).toFixed(2)],['הוצאות עסקיות',sm(D.biz).toFixed(2)],['רווח לפני מס',(sm(D.inc)-sm(D.biz)).toFixed(2)],['מיסים ששולמו',sm(D.tax).toFixed(2)],['הוצאות פרטיות',sm(D.priv).toFixed(2)],['נשאר אחרי הכל',(sm(D.inc)-sm(D.biz)-sm(D.tax)-sm(D.priv)).toFixed(2)],[],['סוג','תאריך','שם/ספק','סכום','אמצעי/קטגוריה','שירות','חשבונית','מספר חשבונית','הערה']];
+  const CI=S.sessions.filter(s=>done(s)&&new Date(s.start_at)<=now&&cById(s.client_id)&&D.ms.includes(mKey(s.start_at))).reduce((t,s)=>t+(+s.price||0),0);
+  const rows=[['דוח רווח והפסד',BI[+bi.split('-')[1]]+' '+bi.split('-')[0]],['הכנסות לפי היומן',CI.toFixed(2)],['נכנס בפועל',sm(D.inc).toFixed(2)],['הוצאות עסקיות',sm(D.biz).toFixed(2)],['רווח לפני מס',(CI-sm(D.biz)).toFixed(2)],['מיסים ששולמו',sm(D.tax).toFixed(2)],['הוצאות פרטיות',sm(D.priv).toFixed(2)],['נשאר אחרי הכל',(CI-sm(D.biz)-sm(D.tax)-sm(D.priv)).toFixed(2)],[],['סוג','תאריך','שם/ספק','סכום','אמצעי/קטגוריה','שירות','חשבונית','מספר חשבונית','הערה']];
   D.inc.sort((a,b)=>a.paid_at<b.paid_at?-1:1).forEach(p=>rows.push(['הכנסה',p.paid_at,cById(p.client_id)?.name,p.amount,METHOD[p.method],svcOf(p),INV[p.invoice_status]?.[0],p.invoice_number,p.notes]));
   const ex=(t,a)=>a.sort((a,b)=>a.spent_at<b.spent_at?-1:1).forEach(x=>rows.push([t,x.spent_at,x.vendor,x.amount,x.category,'',x.invoice==='received'?'התקבלה':x.invoice==='na'?'לא נדרש':'חסרה','',x.notes]));
   ex('הוצאה עסקית',D.biz);ex('מיסים',D.tax);ex('הוצאה פרטית',D.priv);
