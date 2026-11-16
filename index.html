@@ -207,7 +207,6 @@ th{background:#fafafa;letter-spacing:.2px}
     <label>מייל<input class="f" id="gEm" type="email" autocomplete="username" value="lipshtat1@gmail.com" required></label>
     <label>סיסמה<input class="f" id="gPw" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" type="submit">כניסה</button>
-    <button class="btn ghost" id="gNew" type="button">פעם ראשונה? פתיחת משתמש</button>
     <button class="btn ghost" id="gForgot" type="button">שכחתי סיסמה</button>
     <p class="gerr" id="gErr" role="alert"></p>
   </form>
@@ -246,7 +245,7 @@ I.home='<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v
 const ROUTES=[['home','בית'],['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים ולו״ז'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
 const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
 let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='home',period=null,filter='active',wk=1;
-const now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+let now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
 
 /* ---------- data ---------- */
@@ -271,39 +270,8 @@ const fmtT=iso=>new Date(iso).toLocaleTimeString('he-IL',{hour:'2-digit',minute:
 const monthStart=(d=now)=>new Date(d.getFullYear(),d.getMonth(),1);
 const nextMonthStart=(d=now)=>new Date(d.getFullYear(),d.getMonth()+1,1);
 const weekStart=(d=now)=>{const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());x.setDate(x.getDate()-x.getDay());return x};
-const PERIODS=(()=>{const out=[];let d=new Date(FROM);while(d<=now){out.push(mKey(d));d=new Date(d.getFullYear(),d.getMonth()+1,1)}return out})();
-
-/* ---------- the payment rules (as Tal defined them) ----------
-   monthly     – a month is billed on the 1st of the next month; until then it is "accruing"
-   per_session – due on the day of the session          one_time – same
-   weekly      – due at the end of the week
-   package     – paid up front; when 1 session is left the next package shows as upcoming
-   Pairs are billed per person; a payer (e.g. Dikla for Shaked) carries the members' sessions. */
-function clientDue(c){
-  const ss=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&new Date(s.start_at)>=FROM);
-  const sum=a=>a.reduce((t,s)=>t+(+s.price||0),0);
-  const past=ss.filter(s=>new Date(s.start_at)<=now);
-  const nm=nextMonthStart();
-  const r={due:0,expect:0,why:'',left:null};
-  if(c.billing==='monthly'){const ms=monthStart();r.due=sum(ss.filter(s=>new Date(s.start_at)<ms));r.expect=sum(ss.filter(s=>new Date(s.start_at)>=ms&&new Date(s.start_at)<nm));r.why='מצטבר '+HM[now.getMonth()]+' · נשלח ב-1 לחודש';}
-  else if(c.billing==='weekly'){const ws=weekStart();r.due=sum(ss.filter(s=>new Date(s.start_at)<ws));r.expect=sum(ss.filter(s=>{const d=new Date(s.start_at);return d>=ws&&d<nm}));r.why='השבוע הנוכחי';}
-  else if(c.billing==='package'&&c.package_size){
-    const n=past.length,size=c.package_size,first=ss[0],k=+((first?.title||'').match(/(\d+)\s*$/)||[])[1]||1;
-    const covered=k>1?size-k+1:0; // a package already running on 1.9 was paid before
-    const pk=Math.ceil(Math.max(0,n-covered)/size);
-    r.due=pk*size*(+c.price||0);
-    const left=covered+pk*size-n;r.left=left;
-    if(left<=1){r.expect=size*(+c.price||0);r.why=left===0?'החבילה נגמרה · חידוש':'נשאר אימון 1 בחבילה · חידוש';}
-  } else {r.due=sum(past);r.expect=sum(ss.filter(s=>new Date(s.start_at)>now&&new Date(s.start_at)<nm));r.why='אימונים מתוכננים עד סוף החודש';}
-  return r;
-}
-function payers(){
-  const map={};
-  for(const c of S.clients){const pid=payerId(c);const p=cById(pid);if(!p)continue;const row=map[pid]||(map[pid]={payer:p,due:0,expect:0,why:new Set(),left:null,paid:0});
-    const d=clientDue(c);row.due+=d.due;row.expect+=d.expect;if(d.expect&&d.why)row.why.add(d.why);if(d.left!=null)row.left=d.left;}
-  for(const p of S.payments){if(!p.client_id||new Date(p.paid_at)<new Date('2026-09-01'))continue;const c=cById(p.client_id);const row=map[payerId(c)];if(row)row.paid+=+p.amount}
-  return Object.values(map).map(r=>{const open=r.due-r.paid;const credit=Math.max(0,-open);return {...r,open:Math.max(0,open),credit,expectNet:Math.max(0,r.expect-credit)}});
-}
+const mkPeriods=()=>{const out=[];let d=new Date(FROM);while(d<=now){out.push(mKey(d));d=new Date(d.getFullYear(),d.getMonth()+1,1)}return out};
+let PERIODS=mkPeriods();
 
 /* ---------- shell ---------- */
 function nav(){
@@ -316,7 +284,7 @@ function nav(){
 function head(t,sub,right){return `<div class="top"><div><h1>${t}</h1>${sub?`<p>${sub}</p>`:''}</div>${right||''}</div>`}
 function monthSwitch(){return `<div class="months" role="group" aria-label="חודש">${PERIODS.map(k=>`<button data-p="${k}" aria-pressed="${period===k}">${mLabel(k)}</button>`).join('')}</div>`}
 function kpi(l,v,h,c){return `<div class="card kpi ${c||''}"><span class="l">${l}</span><span class="v">${v}</span><span class="h">${h||''}</span></div>`}
-function render(){nav();const f={home,cal,overview,pay,clients,schedule,income,expenses,docs,acct,tasks}[route];$('#main').innerHTML=f();bind();}
+function render(){MEMO={};nav();const f={home,cal,pay,clients,schedule,income,expenses,docs,acct,tasks}[route];$('#main').innerHTML=f();bind();}
 
 
 /* ---------- home ---------- */
@@ -355,13 +323,8 @@ function home(){
 }
 
 /* ---------- 1. income by calendar: the sessions Tal actually did ---------- */
-const done=s=>!s.deleted_from_calendar&&s.status!=='no_show';
+const done=s=>charged(s); // Tal: what is in the calendar and already happened is charged (incl. no-show)
 const isSettled=(cid,k)=>S.months.find(m=>m.client_id===cid&&m.month===k)?.settled;
-function termsOf(c){
-  const p=c.price?ils(c.price):'—';
-  if(c.billing==='package'&&c.package_size){const d=clientDue(c);const at=d.left!=null?c.package_size-d.left:null;return `חבילה${at!=null?` ${at} מתוך ${c.package_size}`:' של '+c.package_size} · ${p} לאימון`}
-  return `${RULE[c.billing]} · ${p} לאימון${c.payer_id?' · משלם/ת: '+cById(c.payer_id)?.name:''}`;
-}
 const sKey=s=>s.event_id&&!String(s.event_id).startsWith('manual')?s.event_id:s.id;
 const isKid=cid=>cById(cid)?.slug?.startsWith('kid-');
 let calKids=false;
@@ -409,7 +372,7 @@ function bind(){
   $$('[data-exf]').forEach(b=>b.onclick=()=>{exF=b.dataset.exf;render()});
   $$('[data-ecatf]').forEach(b=>b.onclick=()=>{exCat=b.dataset.ecatf;render()});
   $$('[data-exclear]').forEach(b=>b.onclick=()=>{exCat=null;render()});
-  {const q=$('#exQ');if(q)q.oninput=()=>{exQ=q.value;const pos=q.selectionStart;render();const n=$('#exQ');n.focus();n.setSelectionRange(pos,pos)}}
+  {const q=$('#exQ');if(q)q.oninput=()=>{clearTimeout(exT);exT=setTimeout(()=>{exQ=q.value;const pos=q.selectionStart;render();const n=$('#exQ');n.focus();n.setSelectionRange(pos,pos)},250)}}
   $$('select[data-ecat]').forEach(x=>x.onchange=async()=>{const e=S.expenses.find(y=>y.id===x.dataset.ecat);e.category=x.value;await db(SB.from('expenses').update({category:x.value}).eq('id',e.id),'נשמר');render()});
   $$('select[data-einv]').forEach(x=>x.onchange=async()=>{const e=S.expenses.find(y=>y.id===x.dataset.einv);e.invoice=x.value;await db(SB.from('expenses').update({invoice:x.value}).eq('id',e.id),'נשמר');render()});
   $$('[data-eup]').forEach(b=>b.onclick=()=>{const id=b.dataset.eup,e=S.expenses.find(y=>y.id===id);const i=document.createElement('input');i.type='file';i.accept='application/pdf,image/*';i.onchange=async()=>{if(i.files[0]){await upload([i.files[0]],{expense_id:id,kind:'expense',month:mKey(e.spent_at)});if(e.invoice==='missing'){await SB.from('expenses').update({invoice:'received'}).eq('id',id)}reload()}};i.click()});
@@ -418,58 +381,16 @@ function bind(){
   $$('[data-card]').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;cardDlg(cById(r.dataset.card))});
   const dz=$('#drop');if(dz){dz.onclick=()=>$('#fileIn').click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');upload([...e.dataTransfer.files])}}
   $$('select[data-doc]').forEach(s=>s.onchange=()=>db(SB.from('docs').update({[s.dataset.field]:s.value||null}).eq('id',s.dataset.doc),'נשמר').then(reload));
-  $$('input[data-task]').forEach(c=>c.onchange=()=>db(SB.from('tasks').update({done:c.checked,status:c.checked?'done':'todo',done_at:c.checked?new Date().toISOString():null}).eq('id',c.dataset.task),c.checked?'בוצע ✓':'הוחזר').then(reload));
+  $$('input[data-task]').forEach(c=>c.onchange=async()=>{const t=S.tasks.find(x=>x.id===c.dataset.task),up={done:c.checked,status:c.checked?'done':'todo',done_at:c.checked?new Date().toISOString():null};Object.assign(t,up);render();try{await db(SB.from('tasks').update(up).eq('id',t.id),c.checked?'בוצע ✓':'הוחזר')}catch(e){reload()}});
   $$('[data-tview]').forEach(b=>b.onclick=()=>{tView=b.dataset.tview;render()});
   {const f=$('#tForm');if(f)f.onsubmit=async e=>{e.preventDefault();const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null,priority:$('#tP').value,category:$('#tC').value||null,client_id:$('#tK').value||null,status:'todo'}),'נוסף');reload()}}
 }
 
-/* ---------- screens ---------- */
-function overview(){
-  const P=payers(),TT=tillToday(),open=TT.reduce((a,r)=>a+r.open,0),exp=P.reduce((a,r)=>a+r.expectNet,0);
-  const inM=S.payments.filter(p=>mKey(p.paid_at)===mKey(now)&&p.reportable!==false).reduce((a,p)=>a+ +p.amount,0);
-  const mS=S.sessions.filter(s=>charged(s)&&mKey(s.start_at)===mKey(now));
-  const xM=S.expenses.filter(x=>mKey(x.spent_at)===mKey(now)).reduce((a,x)=>a+ +x.amount,0);
-  const noInv=S.payments.filter(p=>p.invoice_status==='queued');
-  const xNoInv=S.expenses.filter(x=>x.invoice==='missing');
-  const pk=P.filter(r=>r.left!=null&&r.left<=1);
-  const al=[];
-  if(TT.length)al.push(["var(--bad)",`${TT.length} משלמים עם תשלום פתוח · ${ils(open)}`,'#pay','לתשלומים']);
-  if(pk.length)al.push(['var(--warn)',`חבילות לחידוש: ${pk.map(r=>esc(r.payer.name)).join(', ')}`,'#pay','לחידוש']);
-  if(noInv.length)al.push(['var(--warn)',`${noInv.length} תשלומים בלי חשבונית`,'#income','לחשבוניות']);
-  if(xNoInv.length)al.push(['var(--warn)',`${xNoInv.length} הוצאות בלי חשבונית מצורפת`,'#expenses','להוצאות']);
-  if(S.events.length)al.push(['var(--sand)',`${S.events.length} אירועים ביומן שלא שויכו למתאמן`,'#schedule','לשייך']);
-  // last months: income received vs sessions value
-  const rows=PERIODS.map(k=>({k,inc:S.payments.filter(p=>mKey(p.paid_at)===k).reduce((a,p)=>a+ +p.amount,0),ses:S.sessions.filter(s=>charged(s)&&mKey(s.start_at)===k).reduce((a,s)=>a+ +s.price,0),x:S.expenses.filter(x=>mKey(x.spent_at)===k).reduce((a,x)=>a+ +x.amount,0)}));
-  const max=Math.max(1,...rows.map(r=>Math.max(r.inc,r.ses)));
-  return head('סקירה',`${HM[now.getMonth()]} ${now.getFullYear()} · מצב העסק במבט אחד`)+
-  `<div class="grid kpis">${kpi('התקבל החודש',ils(inM),'תשלומים שנכנסו','ok')}${kpi('פתוח עכשיו',ils(open),'הגיע זמנו ולא שולם',open?'bad':'ok')}${kpi('צפוי עד ה-1',ils(exp),'מצטבר + חידושי חבילות','warn')}${kpi('אימונים החודש',mS.length,ils(mS.reduce((a,s)=>a+ +s.price,0))+' לפי המחירון')}${kpi('הוצאות החודש',ils(xM),'')}</div>
-  <div class="grid two" style="margin-top:14px">
-   <div class="card"><h2>מה דורש טיפול</h2><p class="cap">לחיצה מעבירה למסך המתאים</p><div class="alerts">${al.map(([c,t,h,l])=>`<div class="alert"><span class="dot" style="background:${c}"></span><span>${t}</span><a href="${h}">${l}</a></div>`).join('')||'<div class="empty">הכול מסודר ✓</div>'}</div></div>
-   <div class="card"><h2>הכנסות לפי חודש</h2><p class="cap"><span class="chip c-ok">התקבל</span> מול ערך האימונים לפי היומן</p><div class="bars">${rows.map(r=>`<div class="bar"><span>${mLabel(r.k)}</span><div><div class="track"><span class="fill" style="width:${r.inc/max*100}%"></span></div><div class="track" style="height:6px;margin-top:3px"><span class="fill exp" style="width:${r.ses/max*100}%"></span></div></div><span class="num">${ils(r.inc)}</span></div>`).join('')}</div><p class="note">פס ירוק = כסף שנכנס · פס חול = שווי האימונים</p></div>
-  </div>`;
-}
-
-/* what happened until today and is not paid yet — per payer, simple: sessions done minus payments received */
-function tillToday(){
-  const rows={};
-  for(const s of S.sessions){if(!charged(s)||new Date(s.start_at)>now||new Date(s.start_at)<FROM)continue;const c=cById(s.client_id);if(!c)continue;const pid=payerId(c);
-    const r=rows[pid]||(rows[pid]={payer:cById(pid),sessions:[],due:0,paid:0});r.sessions.push(s);r.due+=+s.price||0;}
-  for(const p of S.payments){if(!p.client_id||p.category!=='trainee'||p.for_period==='before')continue;const c=cById(p.client_id);const pid=payerId(c);const r=rows[pid];if(r)r.paid+=+p.amount}
-  return Object.values(rows).map(r=>{r.open=Math.max(0,r.due-r.paid);
-    // which sessions are still unpaid: the latest ones that add up to the open amount
-    let left=r.open;r.unpaid=[];for(const s of [...r.sessions].sort((a,b)=>a.start_at<b.start_at?1:-1)){if(left<=0)break;r.unpaid.unshift(s);left-=+s.price||0}
-    return r}).filter(r=>r.open>0).sort((a,b)=>b.open-a.open);
-}
 /* ---------- 3. collection: one row per payer, by their terms ---------- */
 const RULE_L={monthly:'סוף חודש',per_session:'כל אימון',weekly:'שבועי',package:'כרטיסייה',one_time:'חד־פעמי'};
-let colM=null;
-function cardPos(c){ // package position from the calendar (title numbers like "Rony 4")
-  const ss=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&new Date(s.start_at)>=FROM&&new Date(s.start_at)<=now).sort((a,b)=>a.start_at<b.start_at?-1:1);
-  const size=c.package_size||10,n=ss.length,k=+((ss[0]?.title||'').match(/(\d+)\s*$/)||[])[1]||1,covered=k>1?size-k+1:0;
-  if(n<=covered)return {card:0,used:k-1+n,size};
-  const n2=n-covered;return {card:Math.ceil(n2/size),used:((n2-1)%size)+1,size};
-}
-function cardsOf(c){ // every card on its own. Only sessions that already happened fill a card; future ones are "ביומן".
+let colM=null,MEMO={};
+function cardsOf(c){return MEMO['k'+c.id]||(MEMO['k'+c.id]=cardsOf0(c))}
+function cardsOf0(c){ // every card on its own. Only sessions that already happened fill a card; future ones are "ביומן".
   const all=S.sessions.filter(s=>s.client_id===c.id&&charged(s)&&new Date(s.start_at)>=FROM).sort((a,b)=>a.start_at<b.start_at?-1:1);
   const past=all.filter(s=>new Date(s.start_at)<=now),future=all.filter(s=>new Date(s.start_at)>now);
   const size=c.package_size||10,price=+c.price||0,chunks=[];
@@ -492,7 +413,8 @@ function cardsOf(c){ // every card on its own. Only sessions that already happen
   const left=size-cur.used,endAt=future[left-1]?new Date(future[left-1].start_at):new Date(+now+left*gap);
   return {cards:L,cur,next:{amount:size*price,at:endAt,left},size,price};
 }
-function collectRows(m){
+function collectRows(m){return MEMO['r'+m]||(MEMO['r'+m]=collectRows0(m))}
+function collectRows0(m){
   const pays=S.clients.filter(c=>!c.payer_id&&c.status!=='inactive'&&c.status!=='lead');
   return pays.map(c=>{const mem=membersOf(c.id).map(x=>x.id);
     const ss=S.sessions.filter(s=>mem.includes(s.client_id)&&charged(s)&&mKey(s.start_at)===m&&new Date(s.start_at)<=now);
@@ -561,7 +483,7 @@ function schedule(){
   return head('מתאמנים ולו״ז',`${fmtD(from)}–${fmtD(new Date(to-1))} · מסונכרן מהיומן כל שעה`,`<button class="btn" data-act="sync">סנכרון עכשיו</button>`)+cliTabs()+
   `<div class="tools">${[-1,0,1].map(w=>`<button class="btn" data-w="${w}" aria-pressed="${wk===w}">${lbl[w]}</button>`).join('')}</div>
   <div class="grid kpis">${kpi('אימונים בשבוע',new Set(ses.map(sKey)).size,'')}${kpi('משובצים',booked.size,'מתאמנים')}${kpi('פעילים בלי אימון',not.length,'',not.length?'warn':'ok')}</div>
-  <div class="grid two" style="margin-top:14px"><div class="card"><h2>השבוע ביומן</h2><p class="cap">לחיצה על אימון: שינוי סטטוס או מחיר</p>${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div style="margin-bottom:10px"><div class="d" style="font-weight:600;color:var(--muted);margin-bottom:4px">יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</div><div class="sess">${Object.values(byDay[d].reduce((m,s)=>((m[sKey(s)]=m[sKey(s)]||[]).push(s),m),{})).sort((a,b)=>a[0].start_at<b[0].start_at?-1:1).map(L=>{const s=L[0];return L.length>1?`<span class="${s.status==='scheduled'?'plan':''}" title="${esc(L.map(x=>cById(x.client_id)?.name).join(', '))}">${fmtT(s.start_at)} ${L.every(x=>isKid(x.client_id))?'קבוצת ילדים':'זוגי'} (${L.length})</span>`:`<span data-act="sess" data-id="${s.id}" class="${s.status==='free'?'free':s.status==='scheduled'?'plan':''}">${fmtT(s.start_at)} ${esc(cById(s.client_id)?.name.split(' ')[0])}</span>`}).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}</div>
+  <div class="grid two" style="margin-top:14px"><div class="card"><h2>השבוע ביומן</h2><p class="cap">לחיצה על אימון: שינוי סטטוס או מחיר</p>${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div style="margin-bottom:10px"><div class="d" style="font-weight:600;color:var(--muted);margin-bottom:4px">יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</div><div class="sess">${Object.values(byDay[d].reduce((m,s)=>((m[sKey(s)]=m[sKey(s)]||[]).push(s),m),{})).sort((a,b)=>a[0].start_at<b[0].start_at?-1:1).map(L=>{const s=L[0];return L.length>1?`<span class="${new Date(s.start_at)>now?'plan':''}" title="${esc(L.map(x=>cById(x.client_id)?.name).join(', '))}">${fmtT(s.start_at)} ${L.every(x=>isKid(x.client_id))?'קבוצת ילדים':'זוגי'} (${L.length})</span>`:`<span data-act="sess" data-id="${s.id}" class="${s.status==='free'?'free':new Date(s.start_at)>now?'plan':''}">${fmtT(s.start_at)} ${esc(cById(s.client_id)?.name.split(' ')[0])}</span>`}).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}</div>
   <div class="card"><h2>לא שובצו</h2><p class="cap">פעילים בלי אימון ביומן בשבוע הזה</p><div class="sess">${not.map(c=>`<span data-act="client" data-id="${c.id}">${esc(c.name)}</span>`).join('')||'<span>כולם משובצים ✓</span>'}</div></div></div>
   ${S.events.length?`<div class="sec"><h3>אירועים ביומן שלא שויכו</h3><span>שייך למתאמן או סמן שזה לא אימון</span></div><div class="tbl"><table><tbody>${S.events.map(e=>`<tr class="click" data-act="event" data-id="${esc(e.event_id)}"><td class="num">${fmtD(e.start_at)} ${fmtT(e.start_at)}</td><td><div class="v">${esc(e.title)}</div></td><td><span class="chip c-warn">לשייך</span></td></tr>`).join('')}</tbody></table></div>`:''}`;
 }
@@ -569,7 +491,7 @@ function schedule(){
 /* ---------- 2. tax: bank + Paybox movements only, per VAT bi-month ---------- */
 const BI=['ינו׳–פבר׳','מרץ–אפר׳','מאי–יוני','יולי–אוג׳','ספט׳–אוק׳','נוב׳–דצמ׳'];
 const biKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+Math.floor(x.getMonth()/2)};
-const BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];
+let BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];
 let bi=biKey(now);if(!BIS.includes(bi))bi=BIS.at(-1);
 const NOTBIZ=['loan','family','internal'];
 const SERVICES=['אימון כושר אישי','אימון זוגי','אימון בקבוצה','חבילת כושר חודשית','חבילת כושר חודשיים','חבילת כושר 3 חודשים','אימון אישי והעצמה אישית חבילה ל 3 חודשים','טיפול ספורטתרפיה','עיסוי רפואי','חבילת טיפולים - עיסוי רפואי + ספורטתרפיה','חבילת שיקום פציעה','ספורטתרפיה וייעוץ','יעוץ','שירות כללי'];
@@ -611,13 +533,13 @@ function splitDlg(p){
 const GREECE='הזרמה לעסק ביוון';
 const ECATS=['שכר דירה','סופר ומזון','מסעדות וקפה','בית','פארם','ביגוד והנעלה','רכב: דלק וחניה','תחבורה','טיסות ונסיעות לחו״ל','חו״ל','ביטוח','פנסיה','מיסים','ארנונה ומים','ועד בית','עמלות בנק','אפל','העברות לאנשים (ביט/פייבוקס)','עסק: רו"ח והנה"ח','עסק: שיווק ותוכנות','עסק: ציוד','לבירור',GREECE];
 const EINV=[['missing','חסרה'],['received','התקבלה'],['na','לא נדרש']];
-let exF='all',exQ='',exCat=null,exAll=false;
+let exF='all',exQ='',exCat=null,exAll=false,exT=null;
 function expenses(){
   const inP=x=>exAll||mKey(x.spent_at)===period;
   const all=S.expenses.filter(inP);
   const R=all.filter(x=>x.category!==GREECE),gr=all.filter(x=>x.category===GREECE);
   const sum=a=>a.reduce((t,x)=>t+ +x.amount,0);
-  let T=R.filter(x=>exF==='all'||(exF==='miss'&&x.invoice==='missing')||(exF==='rev'&&x.category==='לבירור')||(exF==='biz'&&/^עסק/.test(x.category||'')));
+  let T=R.filter(x=>exF==='all'||(exF==='miss'&&x.invoice==='missing')||(exF==='rev'&&x.category==='לבירור')||(exF==='biz'&&isBiz(x)));
   if(exCat)T=T.filter(x=>x.category===exCat);
   if(exQ)T=T.filter(x=>((x.vendor||'')+' '+(x.notes||'')+' '+(x.category||'')).includes(exQ));
   T.sort((a,b)=>a.spent_at<b.spent_at?-1:a.spent_at>b.spent_at?1:b.amount-a.amount);
@@ -629,7 +551,7 @@ function expenses(){
   const row=x=>`<tr class="${x.category==='לבירור'?'dim':''}"><td class="num" style="white-space:nowrap">${fmtD(x.spent_at)}</td><td class="click" data-act="editExp" data-id="${x.id}"><div class="v">${esc(x.vendor)}</div>${x.notes?`<div class="d">${esc(x.notes)}</div>`:''}</td><td>${catSel(x)}</td><td class="hide-m" style="white-space:nowrap;color:var(--muted);font-size:13px">${esc(x.method||'')}</td><td>${invSel(x)}</td><td style="white-space:nowrap">${files(x)}</td><td class="amt">${ils(x.amount)}</td></tr>`;
   const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-p="${k}" data-exall="0" aria-pressed="${!exAll&&period===k}">${mLabel(k)}</button>`).join('')}<button data-exall="1" aria-pressed="${exAll}">הכל</button></div>`;
   return head('הוצאות',`${exAll?'כל התקופה':mLabel(period)} · ${ils(sum(R))}${gr.length?' · יוון בנפרד':''}`,sw)+
-  `<div class="grid kpis">${kpi('הוצאות',ils(sum(R)),R.length+' שורות · בלי יוון')}${kpi('חסרה חשבונית (עסקי)',R.filter(x=>x.invoice==='missing').length,ils(sum(R.filter(x=>x.invoice==='missing'))),R.some(x=>x.invoice==='missing')?'bad':'ok')}${kpi('לבירור',R.filter(x=>x.category==='לבירור').length,'',R.some(x=>x.category==='לבירור')?'warn':'ok')}${gr.length?kpi('הזרמה לעסק ביוון',ils(sum(gr)),'בנפרד — לא בסה״כ'):''}</div>
+  `<div class="grid kpis">${kpi('הוצאות',ils(sum(R)),R.length+' שורות · בלי יוון')}${(()=>{const M=R.filter(x=>isBiz(x)&&x.invoice==='missing');return kpi('חסרה חשבונית (עסקי)',M.length,ils(sum(M)),M.length?'bad':'ok')})()}${kpi('לבירור',R.filter(x=>x.category==='לבירור').length,'',R.some(x=>x.category==='לבירור')?'warn':'ok')}${gr.length?kpi('הזרמה לעסק ביוון',ils(sum(gr)),'בנפרד — לא בסה״כ'):''}</div>
   <div class="grid two" style="margin-top:14px">
    <div class="card"><h2>לאן הלך הכסף</h2><p class="cap">לחיצה מסננת את הטבלה לפי הקטגוריה</p><div class="bars">${cats.map(([c,v])=>`<div class="bar" data-ecatf="${esc(c)}" role="button" tabindex="0" style="grid-template-columns:150px minmax(0,1fr) auto;cursor:pointer"><span class="t">${esc(c)}</span><span class="track"><span class="fill ${c==='לבירור'?'exp':''}" style="width:${v/mx*100}%"></span></span><span class="num">${ils(v)}</span></div>`).join('')||'<div class="empty">אין הוצאות</div>'}</div></div>
    <div class="card"><h2>הכי גדולות</h2><p class="cap">שמונה ההוצאות הגדולות</p>${top.map(x=>`<div class="alert" style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(x.vendor)} <span class="d">· ${fmtD(x.spent_at)} · ${esc(x.category||'')}</span></span><b class="num">${ils(x.amount)}</b></div>`).join('')||'<div class="empty">—</div>'}</div>
@@ -749,31 +671,36 @@ function taskDlg(t){
 function dlg(html){const w=document.createElement('div');w.className='dlg';w.innerHTML=`<div>${html}</div>`;w.onclick=e=>{if(e.target===w)w.remove()};document.body.appendChild(w);return w}
 const val=(w,id)=>w.querySelector(id).value.trim();
 function clientDlg(c){
-  const pid=payerId(c),P=payers().find(r=>r.payer.id===pid),mem=membersOf(pid).map(x=>x.id);
+  const pid=payerId(c),mem=membersOf(pid).map(x=>x.id),payer=cById(pid);
   const mk=mKey(now),prev=mKey(new Date(now.getFullYear(),now.getMonth()-1,1));
   const ses=k=>S.sessions.filter(s=>mem.includes(s.client_id)&&mKey(s.start_at)===k);
-  const chips=list=>list.map(s=>`<span data-act="sess" data-id="${s.id}" class="${!charged(s)?'free':s.status==='scheduled'?'plan':''}">${fmtD(s.start_at)}${mem.length>1?' '+esc(cById(s.client_id).name.split(' ')[0]):''} · ${ils(s.price)}</span>`).join('')||'<span>אין</span>';
+  const chips=list=>list.map(s=>`<span data-act="sess" data-id="${s.id}" class="${!charged(s)?'free':new Date(s.start_at)>now?'plan':''}">${fmtD(s.start_at)}${mem.length>1?' '+esc(cById(s.client_id).name.split(' ')[0]):''} · ${ils(s.price)}</span>`).join('')||'<span>אין</span>';
   const pays=S.payments.filter(p=>mem.includes(p.client_id)).slice(0,10);
+  const row=k=>collectRows(k).find(x=>x.c.id===pid),rc=row(mk),rp=PERIODS.includes(prev)?row(prev):null;
+  const st=r=>r?(r.paid?'✓ שולם':'לא שולם'):'';
+  const K=payer?.billing==='package'&&rc?kpi('כרטיסייה נוכחית',`${rc.p.used} / ${rc.p.size}`,st(rc),rc.paid?'ok':'warn')
+    :(rp?kpi(mLabel(prev),ils(rp.amt),rp.n+' אימונים · '+st(rp),rp.paid||!rp.amt?'ok':'bad'):'')+(rc?kpi(mLabel(mk)+' עד היום',ils(rc.amt),rc.n+' אימונים · '+st(rc),rc.paid?'ok':''):'');
+  const suggest=payer?.billing==='package'?(rc&&!rc.paid?rc.due:0):(rp&&!rp.paid&&rp.amt?rp.amt:rc?.amt);
   const w=dlg(`<h2>${esc(c.name)}</h2><p class="sub">${RULE[c.billing]}${c.package_size?' של '+c.package_size:''} · ${c.price?ils(c.price):'—'}${c.pair_price?' · זוגי '+ils(c.pair_price):''}${c.payer_id?' · משלם/ת: '+esc(cById(c.payer_id)?.name):''}</p>
-   <div class="grid kpis">${kpi('פתוח עכשיו',ils(P?.open),'',P?.open?'bad':'ok')}${kpi('צפוי עד ה-1',ils(P?.expectNet),'','warn')}${P?.credit?kpi('שולם מראש',ils(P.credit),'','ok'):''}</div>
-   <div class="sec"><h3>${HM[now.getMonth()-1<0?11:now.getMonth()-1]}</h3></div><div class="sess">${chips(ses(prev))}</div>
-   <div class="sec"><h3>${HM[now.getMonth()]}</h3><span>מקווקו = מתוכנן</span></div><div class="sess">${chips(ses(mk))}</div>
+   <div class="grid kpis">${K}</div><p class="note d">מצב התשלום כאן זהה למסך הגבייה.</p>
+   <div class="sec"><h3>${mLabel(prev)}</h3></div><div class="sess">${chips(ses(prev))}</div>
+   <div class="sec"><h3>${mLabel(mk)}</h3><span>מקווקו = עוד לא קרה</span></div><div class="sess">${chips(ses(mk))}</div>
    <div class="sec"><h3>תשלומים</h3></div>${payTable(pays)}
    <div class="row"><button class="btn pri" data-x="paid">+ תשלום</button><button class="btn" data-x="bill">הודעת חיוב</button><button class="btn" data-x="edit">עריכה</button></div>`);
-  w.querySelector('[data-x=paid]').onclick=()=>{w.remove();payDlg(null,pid,P?.open||P?.expectNet)};
+  w.querySelector('[data-x=paid]').onclick=()=>{w.remove();payDlg(null,pid,suggest)};
   w.querySelector('[data-x=bill]').onclick=()=>ACT.bill(pid);
   w.querySelector('[data-x=edit]').onclick=()=>{w.remove();clientEdit(c)};
   w.querySelectorAll('[data-act]').forEach(b=>b.onclick=e=>{e.stopPropagation();w.remove();ACT[b.dataset.act](b.dataset.id)});
 }
 function billText(pid){
-  const p=cById(pid),mem=membersOf(pid),P=payers().find(r=>r.payer.id===pid);
+  const p=cById(pid),mem=membersOf(pid);
+  const pkg=mem.find(c=>c.billing==='package');
+  if(pkg){const X=cardsOf(pkg);return `היי ${p.name.split(' ')[0]}, ${X.cur.used>=X.size?'הכרטיסייה הסתיימה':`בכרטיסייה ${X.cur.used} מתוך ${X.size}`}. הכרטיסייה הבאה (${X.size} אימונים) – ${ils(X.size*X.price)}.\nאפשר להעביר בהעברה או בפייבוקס 🙏`}
   const monthly=mem.some(c=>c.billing==='monthly');
   const k=monthly?mKey(new Date(now.getFullYear(),now.getMonth()-1,1)):mKey(now);
-  const ses=S.sessions.filter(s=>mem.some(c=>c.id===s.client_id)&&charged(s)&&mKey(s.start_at)===k&&new Date(s.start_at)<=now);
+  const ses=S.sessions.filter(s=>mem.some(c=>c.id===s.client_id)&&charged(s)&&mKey(s.start_at)===k&&new Date(s.start_at)<=now).sort((a,b)=>a.start_at<b.start_at?-1:1);
   const lines=ses.map(s=>{const who=cById(s.client_id);return `${fmtD(s.start_at)}${who.id!==pid?' ('+who.name.split(' ')[0]+')':''} – ${ils(s.price)}`});
-  const pkg=mem.find(c=>c.billing==='package');
-  if(pkg&&!monthly)return `היי ${p.name.split(' ')[0]}, החבילה הבאה (${pkg.package_size} אימונים) – ${ils(pkg.package_size*pkg.price)}.\nאפשר להעביר בהעברה או בפייבוקס 🙏`;
-  return `היי ${p.name.split(' ')[0]}, סיכום האימונים ל${HM[+k.split('-')[1]-1]}:\n${lines.join('\n')}\nסה״כ: ${ils(P?.open||ses.reduce((a,s)=>a+ +s.price,0))}\nאפשר להעביר בהעברה או בפייבוקס 🙏`;
+  return `היי ${p.name.split(' ')[0]}, סיכום האימונים ל${HM[+k.split('-')[1]-1]}:\n${lines.join('\n')}\nסה״כ: ${ils(ses.reduce((a,s)=>a+ +s.price,0))}\nאפשר להעביר בהעברה או בפייבוקס 🙏`;
 }
 function payDlg(p,pid,suggest){
   const n=!p;p=p||{paid_at:new Date().toISOString().slice(0,10),method:'transfer',invoice_status:'none'};
@@ -831,18 +758,20 @@ function clientEdit(c){
    <div class="form" style="background:none;border:0;padding:0">
     <label>שם<input class="f" id="nm" value="${esc(c.name||'')}"></label>
     <label>טלפון<input class="f" id="ph" inputmode="tel" value="${esc(c.phone||'')}"></label>
-    <label>סטטוס<select class="f" id="st">${[['active','פעיל'],['inactive','לא פעיל'],['lead','ליד']].map(([k,t])=>`<option value="${k}" ${c.status===k?'selected':''}>${t}</option>`).join('')}</select></label>
+    <label>סטטוס<select class="f" id="st">${[['active','פעיל'],['occasional','מזדמן'],['paused','בהשהייה'],['inactive','לא פעיל'],['lead','ליד']].map(([k,t])=>`<option value="${k}" ${c.status===k?'selected':''}>${t}</option>`).join('')}</select></label>
     <label>איך משלם<select class="f" id="bl">${Object.entries(RULE).map(([k,t])=>`<option value="${k}" ${c.billing===k?'selected':''}>${t}</option>`).join('')}</select></label>
     <label>גודל חבילה<input class="f" id="ps" type="number" value="${c.package_size??''}"></label>
     <label>מחיר לאימון<input class="f" id="pr" type="number" value="${c.price??''}"></label>
     <label>מחיר באימון זוגי<input class="f" id="pp" type="number" value="${c.pair_price??''}"></label>
+    <label>שירות (לחשבונית)<select class="f" id="sv"><option value="">—</option>${SERVICES.map(x=>`<option ${x===c.service?'selected':''}>${esc(x)}</option>`).join('')}</select></label>
+    <label>תחילת כרטיסייה נוכחית<input class="f" id="pk" type="date" value="${c.pkg_start||''}"></label>
     <label>מי משלם<select class="f" id="py"><option value="">בעצמו</option>${S.clients.filter(x=>x.id!==c.id).map(x=>`<option value="${x.id}" ${c.payer_id===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
     <label style="grid-column:1/-1">איך מופיע ביומן (פסיקים)<input class="f" id="al" value="${esc((c.calendar_aliases||[]).join(', '))}"></label>
     <label style="grid-column:1/-1">אימון זוגי ביומן (פסיקים)<input class="f" id="pa" value="${esc((c.pair_aliases||[]).join(', '))}"></label>
     <label style="grid-column:1/-1">הערות<input class="f" id="nt" value="${esc(c.notes||'')}"></label>
    </div><div class="row"><button class="btn pri" data-x="save">שמירה</button></div>`);
   w.querySelector('[data-x=save]').onclick=async()=>{const arr=s=>s?s.split(',').map(x=>x.trim()).filter(Boolean):[];const num=s=>s===''?null:+s;
-    const d={name:val(w,'#nm'),phone:val(w,'#ph')||null,status:val(w,'#st'),billing:val(w,'#bl'),package_size:num(val(w,'#ps')),price:num(val(w,'#pr')),pair_price:num(val(w,'#pp')),payer_id:val(w,'#py')||null,calendar_aliases:arr(val(w,'#al')),pair_aliases:arr(val(w,'#pa')),notes:val(w,'#nt')||null};
+    const d={name:val(w,'#nm'),phone:val(w,'#ph')||null,status:val(w,'#st'),billing:val(w,'#bl'),package_size:num(val(w,'#ps')),price:num(val(w,'#pr')),pair_price:num(val(w,'#pp')),payer_id:val(w,'#py')||null,service:val(w,'#sv')||null,pkg_start:val(w,'#pk')||null,calendar_aliases:arr(val(w,'#al')),pair_aliases:arr(val(w,'#pa')),notes:val(w,'#nt')||null};
     if(!d.name)return;await db(n?SB.from('clients').insert(d):SB.from('clients').update(d).eq('id',c.id),'נשמר');w.remove();reload()};
 }
 function sessDlg(s){
@@ -885,9 +814,7 @@ window.addEventListener('message',async e=>{if(e.source!==window||e.data?.type!=
   window.postMessage({type:'TB_ACK',pid:r.pid},'*');if(S.clients.length)reload()}catch(err){}});
 async function openDoc(id){const d=S.docs.find(x=>x.id===id);const w=window.open('','_blank');const {data,error}=await SB.storage.from('docs').createSignedUrl(d.path,600);if(error||!data){w&&w.close();return toast('לא הצלחתי לפתוח')}if(w)w.location=data.signedUrl;else location.href=data.signedUrl}
 const ACT={
-  newPay:()=>payDlg(null),paid:async id=>{const r=tillToday().find(x=>x.payer.id===id);if(cById(id).not_yet_at)await SB.from('clients').update({not_yet_at:null}).eq('id',id);payDlg(null,id,r?.open)},
-  notYet:async id=>{await db(SB.from('clients').update({not_yet_at:new Date().toISOString().slice(0,10)}).eq('id',id),'סומן: עוד לא');reload()},
-  clearNotYet:async id=>{await db(SB.from('clients').update({not_yet_at:null}).eq('id',id));reload()},editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{const p=S.payments.find(x=>x.id===id),c=cById(p.client_id);
+  newPay:()=>payDlg(null),editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{const p=S.payments.find(x=>x.id===id),c=cById(p.client_id);
     if(document.documentElement.dataset.tbExt)window.postMessage({type:'TB_ISSUE',job:{pid:p.id,name:c?.name||p.counterparty||'',wbName:c?.wb_name||null,amount:+p.amount,product:svcOf(p),method:p.source==='shay'?'transfer':(p.method||'transfer'),date:p.paid_at}},'*');
     else toast('התוסף לא מותקן בכרום — בן ארי ייפתח ריק');
     window.open('https://wbfbamldcpa.azurewebsites.net/','webenefit');
@@ -901,7 +828,7 @@ const ACT={
   sync:async(_,b)=>{b&&(b.disabled=true);const {error}=await SB.functions.invoke('sync-calendar');b&&(b.disabled=false);if(error)return toast('הסנכרון נכשל');toast('היומן סונכרן');reload()},
   editTask:id=>taskDlg(S.tasks.find(t=>t.id===id)),
   newTask:async()=>{const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null}),'נוסף');reload()},
-  sent:async()=>{const ids=S.docs.filter(d=>d.month===period).map(d=>d.id);if(!ids.length)return toast('אין מסמכים בחודש הזה');await db(SB.from('docs').update({sent_to_accountant:true}).in('id',ids),'סומן');reload()},
+  sent:async()=>{const ms=acctData(bi).ms,ids=S.docs.filter(d=>ms.includes(d.month)).map(d=>d.id);if(!ids.length)return toast('אין מסמכים בתקופה הזאת');await db(SB.from('docs').update({sent_to_accountant:true}).in('id',ids),'סומן');reload()},
   csv:()=>dl(new Blob([acctCsv()],{type:'text/csv'}),`טל-ליפשטט-${BI[+bi.split('-')[1]]}-${bi.split('-')[0]}.csv`),
   zip:async()=>{if(!window.JSZip)return toast('טוען… נסה שוב');const D=acctData(bi),z=new JSZip(),tag=`${BI[+bi.split('-')[1]]}-${bi.split('-')[0]}`;
     z.file(`דוח-${tag}.csv`,acctCsv());
@@ -915,20 +842,24 @@ const ACT={
 };
 
 /* ---------- boot ---------- */
-function go(){let h=(location.hash||'#home').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)||h==='overview'?h:'home';$('#msheet').hidden=true;render();window.scrollTo(0,0)}
+function go(){let h=(location.hash||'#home').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)?h:'home';$('#msheet').hidden=true;$$('.dlg').forEach(d=>d.remove());render();window.scrollTo(0,0)}
 $('#mMenu').onclick=()=>$('#msheet').hidden=false;$('#mClose').onclick=()=>$('#msheet').hidden=true;$('#msheet').onclick=e=>{if(e.target.id==='msheet')$('#msheet').hidden=true};
 $('#fileIn').onchange=e=>{upload([...e.target.files]);e.target.value=''};
 $('#syncBtn').onclick=e=>ACT.sync(null,e.target);
 $('#outBtn').onclick=async()=>{await SB.auth.signOut();location.reload()};
+let entered=false;
+function tick(){const n=new Date(),day=n.toDateString()!==now.toDateString(),oldM=mKey(now),oldB=biKey(now);now=n;
+  if(!day||!entered)return;PERIODS=mkPeriods();BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];if(period===oldM)period=mKey(now);if(bi===oldB)bi=biKey(now);if(colM===oldM)colM=null;render()}
+setInterval(tick,60000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden||!entered)return;tick();if(!document.querySelector('.dlg'))reload().catch(()=>{})});
 async function enter(){
   try{await load()}catch(e){$('#gate').hidden=false;$('#gErr').textContent='אין הרשאה';return}
   if(!S.clients.length){const {data}=await SB.rpc('is_owner');if(!data){$('#gate').hidden=false;$('#gErr').textContent='המשתמש הזה לא מורשה';return}}
-  $('#gate').hidden=true;window.onhashchange=go;go();
+  $('#gate').hidden=true;entered=true;window.onhashchange=go;go();
 }
 $('#gForm').onsubmit=async e=>{e.preventDefault();$('#gErr').textContent='';const {error}=await SB.auth.signInWithPassword({email:$('#gEm').value.trim(),password:$('#gPw').value});if(error)return $('#gErr').textContent=error.message==='Invalid login credentials'?'מייל או סיסמה שגויים':error.message;enter()};
-$('#gNew').onclick=async()=>{const email=$('#gEm').value.trim(),password=$('#gPw').value;if(password.length<6)return $('#gErr').textContent='בחר סיסמה של 6 תווים לפחות';const {data,error}=await SB.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(error)return $('#gErr').textContent=error.message;if(data.session)return enter();$('#gErr').textContent='נשלח אליך מייל אישור. לוחצים על הקישור וחוזרים לכאן.'};
 $('#gForgot').onclick=async()=>{const email=$('#gEm').value.trim();if(!email)return;await SB.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});$('#gErr').textContent='נשלח מייל לאיפוס סיסמה'};
-SB.auth.onAuthStateChange((ev)=>{if(ev==='PASSWORD_RECOVERY'){const p=prompt('סיסמה חדשה:');if(p)SB.auth.updateUser({password:p}).then(()=>toast('הסיסמה עודכנה'))}});
+SB.auth.onAuthStateChange((ev)=>{if(ev==='PASSWORD_RECOVERY'){const w=dlg(`<h2>סיסמה חדשה</h2><input class="f" id="np" type="password" autocomplete="new-password" placeholder="לפחות 8 תווים"><div class="row"><button class="btn pri" data-x="s">שמירה</button></div>`);w.querySelector('[data-x=s]').onclick=async()=>{const v=w.querySelector('#np').value;if(v.length<8)return toast('לפחות 8 תווים');const {error}=await SB.auth.updateUser({password:v});if(error)return toast(error.message);w.remove();toast('הסיסמה עודכנה')}}});
 SB.auth.getSession().then(({data})=>{if(data.session)enter();else $('#gate').hidden=false});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
