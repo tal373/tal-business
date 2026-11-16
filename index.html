@@ -869,7 +869,7 @@ async function importFile(){
   const cliOpt=id=>`<option value="">—</option>${S.clients.filter(c=>!c.payer_id).sort((a,b)=>a.name.localeCompare(b.name,'he')).map(c=>`<option value="${c.id}" ${c.id===id?'selected':''}>${esc(c.name)}</option>`).join('')}`;
   const catIn={trainee:'מתאמן',cash_unassigned:'מזומן לשיוך',family:'משפחה / פרטי',loan:'הלוואה',internal:'העברה פנימית',playground:'פלייגראונד',other:'אחר'};
   const dupP=r=>S.payments.some(p=>p.paid_at===r.date&&Math.abs(+p.amount-r.amount)<0.01),dupE=r=>S.expenses.some(x=>x.spent_at===r.date&&Math.abs(+x.amount-r.amount)<0.01);
-  rows.forEach(r=>{r.amount=+r.amount;r.dup=r.dir==='in'?dupP(r):dupE(r);if(r.dir==='in'){r.cid=guessClient(r.party);r.cat=/מזומן|הפקד/.test(r.party+' '+(r.desc||''))?'cash_unassigned':r.cid?'trainee':'other'}});
+  rows.forEach(r=>{r.amount=+r.amount;r.party=r.party||r.desc||'';r.dup=r.dir==='in'?dupP(r):dupE(r);if(r.dir==='in'){r.cid=guessClient(r.party);r.cat=/מזומן|הפקד/.test(r.party+' '+(r.desc||''))?'cash_unassigned':r.cid?'trainee':'other'}});
   const nIn=rows.filter(r=>r.dir==='in'&&!r.dup).length,nOut=rows.filter(r=>r.dir!=='in'&&!r.dup).length;
   const w=dlg(`<h2>מה נמצא בקובץ</h2><p class="sub">${rows.length} תנועות · ${nIn} נכנסות חדשות · ${nOut} יוצאות חדשות · שורות אפורות כבר קיימות באפליקציה</p>
    <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px">מקור<select class="f" id="isrc" style="max-width:200px">${srcOpt(src0)}</select>${res.card?`<span class="d">כרטיס ${esc(res.card)}</span>`:''}</label>
