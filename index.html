@@ -549,7 +549,8 @@ function income(){
   return head('דיווח למס',`תנועות בבנק, בפייבוקס ובחשבון של שי · ${BI[+bi.split('-')[1]]} ${bi.split('-')[0]}`,sw+`<button class="btn pri" data-act="importFile">ייבוא קובץ בנק / פייבוקס</button>`)+
   `<div class="grid kpis">${kpi('נכנס בתקופה',ils(sum(list)),list.length+' תנועות','ok')}${kpi('מזומן לשיוך',ils(sum(cash)),cash.length+' הפקדות',cash.length?'warn':'ok')}${kpi('ממתין להפקה',q.length,ils(sum(q)),q.length?'warn':'ok')}</div>
   <div class="tbl" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>לקוח</th><th>סכום</th><th>דרך תשלום</th><th>שירות</th><th>מסמך</th></tr></thead><tbody>${list.map(row).join('')||'<tr><td colspan="6" class="empty">אין תנועות בתקופה — שלח לי את קבצי הבנק</td></tr>'}</tbody>
-  <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ</td><td class="amt">${ils(sum(list))}</td><td colspan="3"></td></tr></tfoot></table></div>`;
+  <tfoot><tr style="font-weight:700;background:var(--surface)"><td colspan="2">סה״כ</td><td class="amt">${ils(sum(list))}</td><td colspan="3"></td></tr></tfoot></table></div>
+  <div style="margin-top:14px">${vatCard(bi)}</div>`;
 }
 function splitDlg(p){
   const opts=S.clients.filter(c=>c.status!=='lead').sort((a,b)=>a.name.localeCompare(b.name,'he')).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -612,6 +613,18 @@ function docs(){
 }
 
 const TAXCAT='מיסים';
+const VATR=0.18,inVat=a=>+a*VATR/(1+VATR),NOVAT=['פנסיה','עמלות בנק','ביטוח','מיסים','שכר דירה','ארנונה ומים'],CARCAT='רכב: דלק וחניה';
+/* VAT for one bi-month: on what came in (reportable income) minus VAT on business expenses that have an invoice */
+function vatOf(k){const D=acctData(k),out=D.inc.reduce((t,p)=>t+inVat(p.amount),0);
+  const inp=D.biz.filter(x=>x.invoice==='received'&&!NOVAT.includes(x.category)).reduce((t,x)=>t+inVat(x.amount)*(x.category===CARCAT?2/3:1),0);
+  const noInv=D.biz.filter(x=>x.invoice==='missing'&&!NOVAT.includes(x.category)),lost=noInv.reduce((t,x)=>t+inVat(x.amount)*(x.category===CARCAT?2/3:1),0);
+  return {out,inp,due:out-inp,lost,noInv:noInv.length,incSum:D.inc.reduce((t,p)=>t+ +p.amount,0)}}
+function vatCard(k){const V=vatOf(k);return `<div class="card"><h2>מע״מ לתקופה</h2><p class="cap">הערכה לפי מה שנכנס בבנק, בפייבוקס ואצל שי · אבירם מאשר את המספר הסופי</p>
+  <div class="alerts"><div class="alert"><span>מע״מ על ההכנסות (מתוך ${ils(V.incSum)})</span><b class="num" style="margin-inline-start:auto">${ils(V.out)}</b></div>
+  <div class="alert"><span>פחות מע״מ על הוצאות עסקיות עם חשבונית</span><b class="num" style="margin-inline-start:auto">−${ils(V.inp)}</b></div>
+  <div class="alert" style="font-weight:700"><span>צפוי לתשלום למע״מ</span><b class="num" style="margin-inline-start:auto">${ils(V.due)}</b></div></div>
+  ${V.lost>=1?`<p class="note">💡 ל-${V.noInv} הוצאות עסקיות חסרה חשבונית. עם חשבונית היית מקזז עוד בערך ${ils(V.lost)} מע״מ.</p>`:''}
+  <p class="note d">רכב: מקוזז 2/3 מהמע״מ. שכירות, ביטוח, פנסיה ועמלות — בלי מע״מ.</p></div>`}
 const bizCats=()=>S.settings?.biz_cats||[];
 const isBiz=x=>bizCats().includes(x.category)||/^עסק/.test(x.category||'');
 function acctData(k){
@@ -645,7 +658,7 @@ function acct(){
    ${line('<span class="d">לידיעה: נכנס בפועל (בנק, פייבוקס, שי)</span>',D.inc)}
    ${D.greece.length?line('<span class="d">הזרמה לעסק ביוון · חישוב נפרד</span>',D.greece)+`<tr><td class="d">נשאר אחרי ההזרמה ליוון</td>${D.ms.map(m=>`<td class="amt">${ils(net(m)-sm(D.greece,m))}</td>`).join('')}<td class="amt">${ils(net()-sm(D.greece))}</td></tr>`:''}
    </tbody></table></div></div>
-  <div class="grid two" style="margin-top:14px">
+  <div class="grid two" style="margin-top:14px">${vatCard(bi)}
    <div class="card"><h2>שליחה לרו״ח</h2><p class="cap">לחיצה אחת: קובץ ZIP עם כל החשבוניות והקבלות של התקופה, דוח רווח והפסד ורשימת כל התנועות</p>
     <div class="tools"><button class="btn pri" data-act="zip">הורדת כל החשבוניות (ZIP)</button><button class="btn" data-act="csv">רק הדוח (CSV)</button><button class="btn" data-act="sent">סימון: נשלח</button></div>
     <p class="note">${docs.length} קבצים בתקופה.${noDoc.length?` ל-${noDoc.length} הוצאות עסקיות עוד אין קובץ מצורף — מצרפים בכפתור "צירוף" במסך ההוצאות.`:''}</p></div>
