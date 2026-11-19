@@ -249,6 +249,8 @@ const I={
 I.home='<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>';I.cal=I.schedule;I.tax=I.acct;I.pay=I.pay;
 const ROUTES=[['home','בית'],['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים ולו״ז'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
 const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
+let LASTSYNC=0;
+async function autoSync(){if(!entered||Date.now()-LASTSYNC<3*60e3)return;LASTSYNC=Date.now();try{const {data}=await SB.functions.invoke('sync-calendar');if(data&&(data.newSessions||data.changed||data.deleted))await reload()}catch(e){}}
 let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='home',period=null,filter='active',wk=0;
 let now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
@@ -501,7 +503,7 @@ function clients(){
   const list=F[cliF]||act;
   const when=s=>s?`${DAYS[new Date(s.start_at).getDay()]} ${fmtD(s.start_at)} ${fmtT(s.start_at)}`:'—';
   const chip=(l,yes,no)=>l.length?`<span class="chip c-ok">${yes} · ${l.length}</span>`:`<span class="chip c-warn">${no}</span>`;
-  return head('מתאמנים ולו״ז',`${act.length} פעילים · ${F.occasional.length} מזדמנים · ${F.paused.length} בהשהייה · לפי היומן`,`<button class="btn pri" data-act="newClient">+ מתאמן</button>`)+cliTabs()+
+  return head('מתאמנים ולו״ז',`${act.length} פעילים · ${F.occasional.length} מזדמנים · ${F.paused.length} בהשהייה · לפי היומן`,`<button class="btn" data-act="sync">🔄 רענון מהיומן</button><button class="btn pri" data-act="newClient">+ מתאמן</button>`)+cliTabs()+
   `<div class="grid kpis">${kpi('פעילים',act.length,F.occasional.length+' מזדמנים · '+F.paused.length+' בהשהייה')}${kpi('שובצו השבוע',act.length-F.notw.length,F.notw.length+' לא שובצו',F.notw.length?'warn':'ok')}${kpi('שובצו לשבוע הבא',act.length-F.notnext.length,F.notnext.length+' לא שובצו',F.notnext.length?'warn':'ok')}</div>
   <div class="tools" style="margin-top:14px">${[['active','פעילים'],['notw','לא שובצו השבוע'],['notnext','לא שובצו לשבוע הבא'],['occasional','מזדמנים'],['paused','בהשהייה'],['inactive','לא פעילים'],['all','הכל']].map(([k,t])=>`<button class="btn" data-clif="${k}" aria-pressed="${cliF===k}">${t} (${F[k].length})</button>`).join('')}</div>
   <div class="tbl"><table><thead><tr><th>שם</th><th>מצב</th><th>השבוע</th><th>שבוע הבא</th><th class="hide-m">אימון אחרון</th><th class="hide-m">אימון הבא</th></tr></thead><tbody>${list.map(x=>`<tr><td class="click" data-act="client" data-id="${x.c.id}"><div class="v">${esc(x.c.name)}</div></td>
@@ -518,7 +520,7 @@ function schedule(){
   const not=active.filter(c=>!booked.has(c.id));
   const byDay={};ses.forEach(s=>{const d=new Date(s.start_at).getDay();(byDay[d]=byDay[d]||[]).push(s)});
   const lbl={'-1':'שבוע שעבר','0':'השבוע','1':'שבוע הבא'};
-  return head('מתאמנים ולו״ז',`${fmtD(from)}–${fmtD(new Date(to-1))} · מסונכרן מהיומן כל שעה`,`<button class="btn" data-act="sync">סנכרון עכשיו</button>`)+cliTabs()+
+  return head('מתאמנים ולו״ז',`${fmtD(from)}–${fmtD(new Date(to-1))} · מתרענן מהיומן בכל כניסה למסך`,`<button class="btn" data-act="sync">🔄 רענון מהיומן</button>`)+cliTabs()+
   `<div class="tools">${[-1,0,1].map(w=>`<button class="btn" data-w="${w}" aria-pressed="${wk===w}">${lbl[w]}</button>`).join('')}</div>
   <div class="grid kpis">${kpi('אימונים בשבוע',new Set(ses.map(sKey)).size,'')}${kpi('משובצים',booked.size,'מתאמנים')}${kpi('פעילים בלי אימון',not.length,'',not.length?'warn':'ok')}</div>
   <div class="grid two" style="margin-top:14px"><div class="card"><h2>השבוע ביומן</h2><p class="cap">לחיצה על אימון: שינוי סטטוס או מחיר</p>${[0,1,2,3,4,5,6].filter(d=>byDay[d]).map(d=>{const dt=new Date(from);dt.setDate(dt.getDate()+d);return `<div style="margin-bottom:10px"><div class="d" style="font-weight:600;color:var(--muted);margin-bottom:4px">יום ${DAYS[d]} ${dt.getDate()}.${dt.getMonth()+1}</div><div class="sess">${Object.values(byDay[d].reduce((m,s)=>((m[sKey(s)]=m[sKey(s)]||[]).push(s),m),{})).sort((a,b)=>a[0].start_at<b[0].start_at?-1:1).map(L=>{const s=L[0];return L.length>1?`<span class="${new Date(s.start_at)>now?'plan':''}" title="${esc(L.map(x=>cById(x.client_id)?.name).join(', '))}">${fmtT(s.start_at)} ${L.every(x=>isKid(x.client_id))?'קבוצת ילדים':'זוגי'} (${L.length})</span>`:`<span data-act="sess" data-id="${s.id}" class="${s.status==='free'?'free':new Date(s.start_at)>now?'plan':''}">${fmtT(s.start_at)} ${esc(cById(s.client_id)?.name.split(' ')[0])}</span>`}).join('')}</div></div>`}).join('')||'<div class="empty">אין אימונים ביומן לשבוע הזה</div>'}</div>
@@ -951,7 +953,7 @@ const ACT={
     const blob=new Blob(['\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='הוצאות-'+(exAll?'הכל':period)+'.csv';a.click()},
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),editClient:id=>clientEdit(cById(id)),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
-  sync:async(_,b)=>{b&&(b.disabled=true);const {error}=await SB.functions.invoke('sync-calendar');b&&(b.disabled=false);if(error)return toast('הסנכרון נכשל');toast('היומן סונכרן');reload()},
+  sync:async(_,b)=>{b&&(b.disabled=true,b.textContent='מסנכרן…');const {data,error}=await SB.functions.invoke('sync-calendar');LASTSYNC=Date.now();if(error){b&&(b.disabled=false,b.textContent='🔄 רענון מהיומן');return toast('הסנכרון נכשל')}const n=(data?.newSessions||0)+(data?.changed||0)+(data?.deleted||0);toast(n?`היומן סונכרן · ${n} שינויים`:'היומן סונכרן · אין שינויים');reload()},
   editTask:id=>taskDlg(S.tasks.find(t=>t.id===id)),
   newTask:async()=>{const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null}),'נוסף');reload()},
   sent:async()=>{const ms=acctData(bi).ms,ids=S.docs.filter(d=>ms.includes(d.month)).map(d=>d.id);if(!ids.length)return toast('אין מסמכים בתקופה הזאת');await db(SB.from('docs').update({sent_to_accountant:true}).in('id',ids),'סומן');reload()},
@@ -968,7 +970,7 @@ const ACT={
 };
 
 /* ---------- boot ---------- */
-function go(){let h=(location.hash||'#home').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)?h:'home';$('#msheet').hidden=true;$$('.dlg').forEach(d=>d.remove());render();window.scrollTo(0,0)}
+function go(){let h=(location.hash||'#home').slice(1);if(h==='schedule'){h='clients';cliTab='sched'}route=ROUTES.some(r=>r[0]===h)?h:'home';$('#msheet').hidden=true;$$('.dlg').forEach(d=>d.remove());render();window.scrollTo(0,0);if(route==='clients')autoSync()}
 $('#mMenu').onclick=()=>$('#msheet').hidden=false;$('#mClose').onclick=()=>$('#msheet').hidden=true;$('#msheet').onclick=e=>{if(e.target.id==='msheet')$('#msheet').hidden=true};
 $('#fab').onclick=()=>quickAdd();
 $('#fileIn').onchange=e=>{upload([...e.target.files]);e.target.value=''};
@@ -978,7 +980,7 @@ let entered=false;
 function tick(){const n=new Date(),day=n.toDateString()!==now.toDateString(),oldM=mKey(now),oldB=biKey(now);now=n;
   if(!day||!entered)return;PERIODS=mkPeriods();BIS=[...new Set(PERIODS.map(k=>biKey(k+'-01')))];if(period===oldM)period=mKey(now);if(bi===oldB)bi=biKey(now);if(colM===oldM)colM=null;render()}
 setInterval(tick,60000);
-document.addEventListener('visibilitychange',()=>{if(document.hidden||!entered)return;tick();if(!document.querySelector('.dlg'))reload().catch(()=>{})});
+document.addEventListener('visibilitychange',()=>{if(document.hidden||!entered)return;tick();if(!document.querySelector('.dlg'))reload().catch(()=>{});if(route==='clients')autoSync()});
 async function enter(){
   try{await load()}catch(e){$('#gate').hidden=false;$('#gErr').textContent='אין הרשאה';return}
   if(!S.clients.length){const {data}=await SB.rpc('is_owner');if(!data){$('#gate').hidden=false;$('#gErr').textContent='המשתמש הזה לא מורשה';return}}
