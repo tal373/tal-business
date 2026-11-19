@@ -250,7 +250,7 @@ I.home='<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v
 const ROUTES=[['home','בית'],['cal','הכנסה לפי יומן'],['income','דיווח למס'],['pay','גבייה'],['clients','מתאמנים ולו״ז'],['expenses','הוצאות'],['docs','מסמכים'],['acct','לרו״ח'],['tasks','משימות']];
 const ico=k=>`<svg viewBox="0 0 24 24">${I[k]||I.overview}</svg>`;
 let LASTSYNC=0;
-async function autoSync(){if(!entered||Date.now()-LASTSYNC<3*60e3)return;LASTSYNC=Date.now();try{const {data}=await SB.functions.invoke('sync-calendar');if(data&&(data.newSessions||data.changed||data.deleted))await reload()}catch(e){}}
+async function autoSync(){if(!entered||Date.now()-LASTSYNC<3*60e3)return;LASTSYNC=Date.now();try{const {data}=await SB.functions.invoke('sync-calendar');const n=data?(data.newSessions||0)+(data.changed||0)+(data.deleted||0):0;if(n){await reload();toast(`עודכנו ${n} שינויים מהיומן`)}}catch(e){}}
 let S={clients:[],sessions:[],payments:[],expenses:[],docs:[],events:[],tasks:[],months:[]},route='home',period=null,filter='active',wk=0;
 let now=new Date();period=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
@@ -953,7 +953,7 @@ const ACT={
     const blob=new Blob(['\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='הוצאות-'+(exAll?'הכל':period)+'.csv';a.click()},
   newExp:()=>expDlg(null),editExp:id=>expDlg(S.expenses.find(x=>x.id===id)),newClient:()=>clientEdit(null),editClient:id=>clientEdit(cById(id)),client:id=>clientDlg(cById(id)),
   sess:id=>sessDlg(S.sessions.find(s=>s.id===id)),event:id=>eventDlg(S.events.find(e=>e.event_id===id)),open:id=>openDoc(id),
-  sync:async(_,b)=>{b&&(b.disabled=true,b.textContent='מסנכרן…');const {data,error}=await SB.functions.invoke('sync-calendar');LASTSYNC=Date.now();if(error){b&&(b.disabled=false,b.textContent='🔄 רענון מהיומן');return toast('הסנכרון נכשל')}const n=(data?.newSessions||0)+(data?.changed||0)+(data?.deleted||0);toast(n?`היומן סונכרן · ${n} שינויים`:'היומן סונכרן · אין שינויים');reload()},
+  sync:async(_,b)=>{b&&(b.disabled=true,b.textContent='מסנכרן…');const {data,error}=await SB.functions.invoke('sync-calendar');LASTSYNC=Date.now();if(error){b&&(b.disabled=false,b.textContent='🔄 רענון מהיומן');return toast('הסנכרון נכשל')}const n=(data?.newSessions||0)+(data?.changed||0)+(data?.deleted||0);toast(n?`עודכנו ${n} שינויים מהיומן`:'הכל מעודכן מול היומן ✓');reload()},
   editTask:id=>taskDlg(S.tasks.find(t=>t.id===id)),
   newTask:async()=>{const t=$('#tT').value.trim();if(!t)return;await db(SB.from('tasks').insert({title:t,due:$('#tD').value||null}),'נוסף');reload()},
   sent:async()=>{const ms=acctData(bi).ms,ids=S.docs.filter(d=>ms.includes(d.month)).map(d=>d.id);if(!ids.length)return toast('אין מסמכים בתקופה הזאת');await db(SB.from('docs').update({sent_to_accountant:true}).in('id',ids),'סומן');reload()},
