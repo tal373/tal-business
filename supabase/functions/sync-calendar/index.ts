@@ -5,7 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 // EXDATE, moved/cancelled instances). Times are Asia/Jerusalem unless given in UTC.
 const FROM = new Date("2026-09-01T00:00:00+03:00");
 const TZ = "Asia/Jerusalem";
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type" };
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods": "POST, GET, OPTIONS" };
 const fmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 function offsetAt(ms: number) {
   const p: any = {}; for (const x of fmt.formatToParts(new Date(ms))) p[x.type] = x.value;
@@ -117,37 +117,54 @@ Deno.serve(async (req) => {
     }
     const existing: any[] = [];
     for (let i = 0; ; i += 1000) {
-      const { data, error } = await sb.from("sessions").select("id,event_id,client_id,start_at,title,deleted_from_calendar").gte("start_at", FROM.toISOString()).not("event_id", "like", "manual_%").order("id").range(i, i + 999);
+      const { data, error } = await sb.from("sessions").select("id,event_id,client_id,start_at,title,price,deleted_from_calendar").gte("start_at", FROM.toISOString()).not("event_id", "like", "manual_%").order("id").range(i, i + 999);
       if (error) throw error; existing.push(...data!); if (data!.length < 1000) break;
     }
     const have = new Map((existing || []).map((s) => [s.event_id + "|" + s.client_id, s]));
-    const evHas = new Set((existing || []).map((s) => s.event_id)); // event already assigned (maybe moved by hand) -> never re-create
+    const byEv = new Map<string, any[]>(); for (const s of existing) { const l = byEv.get(s.event_id) || []; l.push(s); byEv.set(s.event_id, l); }
     const { data: ignoredRows } = await sb.from("calendar_events").select("event_id").eq("ignored", true);
     const ignored = new Set((ignoredRows || []).map((r) => r.event_id));
 
-    const evRows: any[] = [], newSessions: any[] = [], changed: any[] = [];
+    const evRows: any[] = [], newSessions: any[] = [], changed: any[] = [], stale: string[] = [];
     const now = Date.now();
     for (const e of events) {
       const k = base(e.title);
       const matches: { c: any; price: number }[] = [];
       if (pair.has(k)) for (const c of pair.get(k)!) matches.push({ c, price: c.pair_price ?? c.price ?? 0 });
       else if (solo.has(k)) { const c = solo.get(k); matches.push({ c, price: c.price ?? 0 }); }
-      else { // kids group: title made only of kids' first names, e.g. "שחר אברי רוני"
+      else if (e.title.includes("+")) { // couple session written as "A + B": each one by name, at the couple price
+        const parts = e.title.split("+").map((p) => base(p)).filter(Boolean);
+        if (parts.length >= 2 && parts.every((p) => solo.has(p))) for (const p of parts) { const c = solo.get(p); if (!matches.some((m) => m.c.id === c.id)) matches.push({ c, price: c.pair_price ?? c.price ?? 0 }); }
+      } else {
         const toks = norm(e.title).split(" ").filter(Boolean);
         if (toks.length >= 2 && toks.every((t) => group.has(t))) for (const t of new Set(toks)) matches.push({ c: group.get(t), price: toks.length === 2 ? 150 : 110 });
       }
-      evRows.push({ ...e, matched: matches.length > 0, ignored: ignored.has(e.event_id), synced_at: new Date().toISOString() });
+      const mids = new Set(matches.map((m) => m.c.id));
+      const future = Date.parse(e.start_at) > now;
+      const sesList = byEv.get(e.event_id) || [];
+      // renamed event now belongs to another trainee: drop the stale future link so the right trainee gets it
+      const staleHere = matches.length && future ? sesList.filter((s) => !mids.has(s.client_id) && base(s.title || "") !== k) : [];
+      for (const s of staleHere) stale.push(s.id);
+      const keep = sesList.filter((s) => !staleHere.includes(s));
+      const handMoved = keep.some((s) => !mids.has(s.client_id)); // assigned by hand to someone else -> leave it alone
+      evRows.push({ ...e, matched: matches.length > 0 || keep.length > 0, ignored: ignored.has(e.event_id), synced_at: new Date().toISOString() });
       for (const m of matches) {
         const old = have.get(e.event_id + "|" + m.c.id);
-        if (!old && evHas.has(e.event_id)) continue;
-        if (!old) newSessions.push({ event_id: e.event_id, client_id: m.c.id, start_at: e.start_at, title: e.title, price: m.price, status: Date.parse(e.start_at) < now ? "done" : "scheduled" });
-        else if (Date.parse(old.start_at) !== Date.parse(e.start_at) || old.title !== e.title || old.deleted_from_calendar) changed.push({ id: old.id, start_at: e.start_at, title: e.title });
+        if (!old && handMoved) continue;
+        if (!old) newSessions.push({ event_id: e.event_id, client_id: m.c.id, start_at: e.start_at, title: e.title, price: m.price, status: future ? "scheduled" : "done" });
+        else {
+          const renamed = old.title !== e.title;
+          if (Date.parse(old.start_at) !== Date.parse(e.start_at) || renamed || old.deleted_from_calendar || (future && renamed && +old.price !== m.price))
+            changed.push({ id: old.id, start_at: e.start_at, title: e.title, ...(future && renamed ? { price: m.price } : {}) });
+        }
       }
+      for (const s of keep) if (!mids.has(s.client_id) && (Date.parse(s.start_at) !== Date.parse(e.start_at) || s.title !== e.title || s.deleted_from_calendar)) changed.push({ id: s.id, start_at: e.start_at, title: e.title });
     }
     const chunk = async (rows: any[], fn: (r: any[]) => any) => { for (let i = 0; i < rows.length; i += 500) { const { error } = await fn(rows.slice(i, i + 500)); if (error) throw error; } };
     await chunk(evRows, (r) => sb.from("calendar_events").upsert(r, { onConflict: "event_id" }));
+    for (let i = 0; i < stale.length; i += 200) await sb.from("sessions").delete().in("id", stale.slice(i, i + 200));
     await chunk(newSessions, (r) => sb.from("sessions").insert(r));
-    for (const c of changed) await sb.from("sessions").update({ start_at: c.start_at, title: c.title, deleted_from_calendar: false }).eq("id", c.id);
+    for (const c of changed) { const { id, ...u } = c; await sb.from("sessions").update({ ...u, deleted_from_calendar: false }).eq("id", id); }
 
     const ids = new Set(events.map((e) => e.event_id));
     const toIso = new Date(to).toISOString();
@@ -161,7 +178,7 @@ Deno.serve(async (req) => {
     const evGone = (evWin || []).filter((r) => !ids.has(r.event_id)).map((r) => r.event_id);
     for (let i = 0; i < evGone.length; i += 200) await sb.from("calendar_events").delete().in("event_id", evGone.slice(i, i + 200));
 
-    return new Response(JSON.stringify({ ok: true, events: events.length, newSessions: newSessions.length, changed: changed.length, deleted: gone.length, unmatched: evRows.filter((r) => !r.matched).length }), { headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, events: events.length, newSessions: newSessions.length, changed: changed.length + stale.length, deleted: gone.length, unmatched: evRows.filter((r) => !r.matched).length }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String((e as any)?.message || e) }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
