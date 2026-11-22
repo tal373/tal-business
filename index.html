@@ -493,7 +493,7 @@ function pay(){
   const sw=`<div class="months" role="group">${PERIODS.map(k=>`<button data-colm="${k}" aria-pressed="${m===k}">${mLabel(k)}</button>`).join('')}</div>`;
   return head('גבייה',`כל מתאמן לפי התנאים שלו · ${mLabel(m)}${m===cur?' (עד היום)':''}`,sw+`<button class="btn pri" data-act="billAll">הודעות גבייה</button>`)+
   `<div class="grid kpis">${kpi('שילמו',R.filter(r=>r.paid).length,'מתוך '+R.length)}${kpi('עוד לא שילמו',unpaid.length,uSum?ils(uSum)+' עד היום (בלי כרטיסיות)':'',unpaid.length?'warn':'ok')}${(()=>{const P=R.filter(r=>r.type==='package').map(r=>cardsOf(r.c));const unpaidCards=P.reduce((t,X)=>t+X.cards.filter(c=>!c.old&&!c.paid).reduce((a,c)=>a+c.amount,0),0);const end=new Date(now.getFullYear(),now.getMonth()+1,1);const nextIn=P.filter(X=>X.next.at<end).reduce((t,X)=>t+X.next.amount,0);const me=new Date(now.getFullYear(),now.getMonth()+1,1);const fut=m===cur?R.filter(r=>r.type!=='package').reduce((t,r)=>{const mem=membersOf(r.c.id).map(x=>x.id);return t+S.sessions.filter(s=>mem.includes(s.client_id)&&charged(s)&&new Date(s.start_at)>now&&new Date(s.start_at)<me&&s.paid!==true).reduce((a,s)=>a+ +s.price,0)},0):0;
-    return kpi('צפוי להיכנס',ils(uSum+fut+unpaidCards+nextIn),'סוף חודש '+ils(uSum+fut)+(fut?' (כולל '+ils(fut)+' שעוד ביומן)':'')+' · כרטיסיות '+ils(unpaidCards+nextIn))})()}</div>
+    return kpi('צפוי להיכנס',ils(uSum+fut+unpaidCards+nextIn),'סוף חודש '+ils(uSum+fut)+(fut?' (כולל '+ils(fut)+' שעוד ביומן)':'')+' · כרטיסיות '+ils(unpaidCards+nextIn))})()}</div>${m===cur?`<p style="margin:-4px 0 12px"><button class="btn sm" data-act="fcast">איך הצפי מחושב? פירוט לפי מתאמן</button></p>`:''}
   ${(()=>{const P=R.filter(r=>r.type==='package');if(!P.length)return '';return `<div class="sec"><h3>כרטיסיות</h3><span>כל כרטיסייה בנפרד · ${P.length} מתאמנים</span></div>`+P.map(r=>{const X=cardsOf(r.c);
      return `<div class="card" style="margin-bottom:10px"><h2>${esc(r.c.name)} <span class="chip c-na">כרטיסייה של ${X.size} · ${ils(X.price)} לאימון · ${ils(X.size*X.price)}</span></h2>
      <div class="tbl" style="margin-top:8px"><table><thead><tr><th>כרטיסייה</th><th>ניצול</th><th class="hide-m">תאריכים</th><th style="text-align:left">סכום</th><th></th></tr></thead><tbody>
@@ -959,7 +959,18 @@ window.addEventListener('message',async e=>{if(e.source!==window||e.data?.type!=
   const p=S.payments.find(x=>x.id===r.pid);if(r.wbName&&p?.client_id)await SB.from('clients').update({wb_name:r.wbName}).eq('id',p.client_id);
   window.postMessage({type:'TB_ACK',pid:r.pid},'*');if(S.clients.length)reload()}catch(err){}});
 async function openDoc(id){const d=S.docs.find(x=>x.id===id);const w=window.open('','_blank');const {data,error}=await SB.storage.from('docs').createSignedUrl(d.path,600);if(error||!data){w&&w.close();return toast('לא הצלחתי לפתוח')}if(w)w.location=data.signedUrl;else location.href=data.signedUrl}
-const ACT={
+function fcastDlg(){const cur=mKey(now),R=collectRows(cur),me=new Date(now.getFullYear(),now.getMonth()+1,1);
+  const rows=R.map(r=>{const mem=membersOf(r.c.id).map(x=>x.id);
+    if(r.type==='package'){const X=cardsOf(r.c);const open=X.cards.filter(c=>!c.old&&!c.paid).reduce((a,c)=>a+c.amount,0),nx=X.next.at<me?X.next.amount:0;return {r,past:open,fut:nx,why:`כרטיסייה ${X.cur.used}/${X.size}${open?' · לא שולמה':''}${nx?' · הבאה צפויה ~'+fmtD(X.next.at):''}`}}
+    const F=S.sessions.filter(s=>mem.includes(s.client_id)&&charged(s)&&new Date(s.start_at)>now&&new Date(s.start_at)<me&&s.paid!==true);
+    const past=r.paid?0:(r.due??r.amt),fut=F.reduce((a,s)=>a+ +s.price,0);
+    return {r,past,fut,why:`${r.n} אימונים שהיו${r.paid?' · שולם':''}${F.length?` · עוד ${F.length} ביומן (${F.map(s=>fmtD(s.start_at)).join(', ')})`:''}`}}).filter(x=>x.past+x.fut>0).sort((a,b)=>(b.past+b.fut)-(a.past+a.fut));
+  const T=k=>rows.reduce((t,x)=>t+x[k],0);
+  dlg(`<h2>איך הצפי מחושב · ${mLabel(cur)}</h2><p class="sub">מה שהיה ועוד לא שולם + אימונים שעוד רשומים ביומן עד סוף החודש. אימון שסימנת "שולם" לא נספר.</p>
+  <div class="tbl"><table><thead><tr><th>מתאמן</th><th class="hide-m">פירוט</th><th style="text-align:left">היה ולא שולם</th><th style="text-align:left">עוד ביומן</th><th style="text-align:left">סה״כ</th></tr></thead><tbody>
+  ${rows.map(x=>`<tr><td><div class="v">${esc(x.r.c.name)}</div><div class="d">${RULE_L[x.r.type]||(x.r.type==='package'?'כרטיסייה':'')}</div></td><td class="hide-m d">${x.why}</td><td class="amt">${x.past?ils(x.past):'—'}</td><td class="amt">${x.fut?ils(x.fut):'—'}</td><td class="amt"><b>${ils(x.past+x.fut)}</b></td></tr>`).join('')}
+  <tr style="font-weight:700;background:var(--surface2)"><td>סה״כ</td><td class="hide-m"></td><td class="amt">${ils(T('past'))}</td><td class="amt">${ils(T('fut'))}</td><td class="amt">${ils(T('past')+T('fut'))}</td></tr></tbody></table></div>`)}
+const ACT={fcast:()=>fcastDlg(),
   importFile:()=>importFile(),receipt:()=>receiptFlow(),billAll:()=>billAll(),
   newPay:()=>payDlg(null),editPay:id=>payDlg(S.payments.find(p=>p.id===id)),doc:id=>openDoc(id),split:id=>splitDlg(S.payments.find(p=>p.id===id)),issue:async id=>{const p=S.payments.find(x=>x.id===id),c=cById(p.client_id);
     if(document.documentElement.dataset.tbExt)window.postMessage({type:'TB_ISSUE',job:{pid:p.id,name:c?.name||p.counterparty||'',wbName:c?.wb_name||null,amount:+p.amount,product:svcOf(p),method:p.source==='shay'?'transfer':(p.method||'transfer'),date:p.paid_at}},'*');
