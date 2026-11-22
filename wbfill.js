@@ -14,7 +14,7 @@ window.__TB_RUN = async () => {
   const window = D.defaultView;
   const N = D.querySelector('#navigatorMetro');
   let job = window.__TB_JOB;
-  for (let i = 0; i < 20 && !job; i++) { try { job = JSON.parse(D.documentElement.dataset.tbJob || 'null'); } catch (e) {} if (!job) await sleep(250); }
+  for (let i = 0; i < 240 && !job; i++) { try { job = JSON.parse(D.documentElement.dataset.tbJob || 'null'); } catch (e) {} if (!job) await sleep(250); }
   delete D.documentElement.dataset.tbJob;
   if (!N || !job || window.__TB_RUNNING) return;
   window.__TB_RUNNING = true;
