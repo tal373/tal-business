@@ -359,6 +359,12 @@ function flowCard(){
    ${row('נשאר עד התקרה',ils(left),'color:'+(left<0?'var(--bad)':'inherit'))}
    ${row('צפוי להישאר בסוף החודש',ils(res),'font-weight:700;color:'+(res<0?'var(--bad)':'inherit'))}</div>
    <p class="cap" style="margin-top:8px">החודש הבא מחושב לפי החודש הזה. מיסים בפועל יורדים פעם בחודשיים.</p></div>`}
+
+/* ---------- 1. income by calendar: the sessions Tal actually did ---------- */
+const done=s=>charged(s); // Tal: what is in the calendar and already happened is charged (incl. no-show)
+const manualSet=(cid,k)=>{const r=S.months.find(m=>m.client_id===cid&&m.month===k);return r?!!r.settled:undefined};
+const paidPool=pid=>{const mem=membersOf(pid).map(x=>x.id);return S.payments.filter(p=>mem.includes(p.client_id)&&p.category==='trainee'&&p.for_period!=='before').reduce((t,p)=>t+ +p.amount,0)};
+/* money that came in (bank/paybox/cash) covers what is owed, oldest first. A manual click always wins. */
 function allocate(pid,items){let pool=paidPool(pid);for(const it of items){const m=manualSet(pid,it.key);
   if(m===true){it.paid=true;pool=Math.max(0,pool-it.need)}else if(m===false){it.paid=false}
   else if(it.need>0&&pool>=it.need-0.5){it.paid=true;it.auto=true;pool-=it.need}else it.paid=false}return items}
