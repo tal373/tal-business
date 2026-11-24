@@ -341,7 +341,7 @@ function plCard(){
     ex=k=>S.expenses.filter(x=>mKey(x.spent_at)===k&&x.category!==GREECE).reduce((t,x)=>t+ +x.amount,0);
   const L=ks.map(k=>({k,i:inc(k),e:ex(k)})),mx=Math.max(1,...L.map(r=>Math.max(r.i,r.e)));
   return `<div class="card"><h2>רווח והפסד לפי חודש</h2><p class="cap">הכנסה לפי יומן מול כל ההוצאות (בלי יוון) · מה נשאר</p><div class="pl">${L.map(r=>`<span>${mLabel(r.k)}${r.k===mKey(now)?' <span class="d">עד היום</span>':''}</span><div class="b"><span class="d">${ils(r.i)} פחות ${ils(r.e)} = <b style="color:${r.i-r.e<0?'var(--bad)':'inherit'}">${ils(r.i-r.e)}</b></span><span class="r" style="width:${r.i/mx*100}%"></span><span class="r x" style="width:${r.e/mx*100}%"></span></div>`).join('')}</div><p class="note d">פס כהה = הכנסה · פס בהיר = הוצאות</p></div>`}
-const FIXED=['שכר דירה','ביטוח','פנסיה','ועד בית','ארנונה ומים','עמלות בנק','אפל'];
+const FIXED=['שכר דירה','ביטוח','פנסיה','ועד בית','ארנונה ומים','עמלות בנק','אפל','החזר הלוואה','עסק: רו"ח והנה"ח'];
 function flowCard(){
   const end=new Date(+now+30*864e5),sumP=a=>a.reduce((t,s)=>t+(+s.price||0),0);let inn=0;const lines=[];
   for(const c of S.clients.filter(c=>!c.payer_id&&c.status!=='inactive'&&c.status!=='lead')){const mem=membersOf(c.id).map(x=>x.id);
@@ -349,11 +349,11 @@ function flowCard(){
     if(c.billing==='package'){const X=cardsOf(c);let v=X.cur.paid?0:X.cur.amount;if(X.next.at<=end)v+=X.next.amount;inn+=v}
     else if(c.billing==='monthly'){const mk=mKey(now),r=collectRows(mk).find(x=>x.c.id===c.id);inn+=(r&&!r.paid?r.amt:0)+sumP(fut.filter(s=>mKey(s.start_at)===mk))}
     else{inn+=sumP(fut);if(PERSES(c.billing))PERIODS.forEach(k=>{const r=collectRows(k).find(x=>x.c.id===c.id);if(r)inn+=r.due||0})}}
-  const full=PERIODS.filter(k=>k<mKey(now)).slice(-2),n=Math.max(1,full.length),E=S.expenses.filter(x=>full.includes(mKey(x.spent_at))&&x.category!==GREECE);
+  const full=PERIODS.filter(k=>k<mKey(now)).slice(-2),n=Math.max(1,full.length),E=S.expenses.filter(x=>full.includes(mKey(x.spent_at))&&x.category!==GREECE&&x.method!=='כרטיס 1576');
   const fixed=E.filter(x=>FIXED.includes(x.category)).reduce((t,x)=>t+ +x.amount,0)/n,tax=E.filter(x=>x.category==='מיסים').reduce((t,x)=>t+ +x.amount,0)/n,rest=E.filter(x=>!FIXED.includes(x.category)&&x.category!=='מיסים').reduce((t,x)=>t+ +x.amount,0)/n,out=fixed+tax+rest;
   return `<div class="card"><h2>תזרים · 30 הימים הקרובים</h2><p class="cap">הערכה לפי היומן, הכרטיסיות וממוצע ההוצאות ב${full.map(mLabel).join(' ו')||'—'}</p>
    <div class="alerts"><div class="alert"><span>צפוי להיכנס</span><b class="num" style="margin-inline-start:auto">${ils(inn)}</b></div>
-   <div class="alert"><span>קבועות (שכירות, ביטוח, פנסיה, ועד…)</span><b class="num" style="margin-inline-start:auto">${ils(fixed)}</b></div>
+   <div class="alert"><span>קבועות (שכירות, הלוואה, ביטוח, פנסיה, ועד…)</span><b class="num" style="margin-inline-start:auto">${ils(fixed)}</b></div>
    <div class="alert"><span>מיסים (ממוצע)</span><b class="num" style="margin-inline-start:auto">${ils(tax)}</b></div>
    <div class="alert"><span>שוטפות (סופר, רכב, פארם…)</span><b class="num" style="margin-inline-start:auto">${ils(rest)}</b></div>
    <div class="alert" style="font-weight:700"><span>צפוי להישאר</span><b class="num" style="margin-inline-start:auto;color:${inn-out<0?'var(--bad)':'inherit'}">${ils(inn-out)}</b></div></div></div>`}
