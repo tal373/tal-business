@@ -343,26 +343,22 @@ function plCard(){
   return `<div class="card"><h2>רווח והפסד לפי חודש</h2><p class="cap">הכנסה לפי יומן מול כל ההוצאות (בלי יוון) · מה נשאר</p><div class="pl">${L.map(r=>`<span>${mLabel(r.k)}${r.k===mKey(now)?' <span class="d">עד היום</span>':''}</span><div class="b"><span class="d">${ils(r.i)} פחות ${ils(r.e)} = <b style="color:${r.i-r.e<0?'var(--bad)':'inherit'}">${ils(r.i-r.e)}</b></span><span class="r" style="width:${r.i/mx*100}%"></span><span class="r x" style="width:${r.e/mx*100}%"></span></div>`).join('')}</div><p class="note d">פס כהה = הכנסה · פס בהיר = הוצאות</p></div>`}
 const FIXED=['שכר דירה','ביטוח','פנסיה','ועד בית','ארנונה ומים','עמלות בנק','אפל','החזר הלוואה','עסק: רו"ח והנה"ח'];
 function flowCard(){
-  const end=new Date(+now+30*864e5),sumP=a=>a.reduce((t,s)=>t+(+s.price||0),0);let inn=0;const lines=[];
-  for(const c of S.clients.filter(c=>!c.payer_id&&c.status!=='inactive'&&c.status!=='lead')){const mem=membersOf(c.id).map(x=>x.id);
-    const fut=S.sessions.filter(s=>mem.includes(s.client_id)&&charged(s)&&new Date(s.start_at)>now&&new Date(s.start_at)<=end);
-    if(c.billing==='package'){const X=cardsOf(c);let v=X.cur.paid?0:X.cur.amount;if(X.next.at<=end)v+=X.next.amount;inn+=v}
-    else if(c.billing==='monthly'){const mk=mKey(now),r=collectRows(mk).find(x=>x.c.id===c.id);inn+=(r&&!r.paid?r.amt:0)+sumP(fut.filter(s=>mKey(s.start_at)===mk))}
-    else{inn+=sumP(fut);if(PERSES(c.billing))PERIODS.forEach(k=>{const r=collectRows(k).find(x=>x.c.id===c.id);if(r)inn+=r.due||0})}}
-  const full=PERIODS.filter(k=>k<mKey(now)).slice(-2),n=Math.max(1,full.length),E=S.expenses.filter(x=>full.includes(mKey(x.spent_at))&&x.category!==GREECE&&x.method!=='כרטיס 1576');
-  const fixed=E.filter(x=>FIXED.includes(x.category)).reduce((t,x)=>t+ +x.amount,0)/n,tax=E.filter(x=>x.category==='מיסים').reduce((t,x)=>t+ +x.amount,0)/n,rest=E.filter(x=>!FIXED.includes(x.category)&&x.category!=='מיסים').reduce((t,x)=>t+ +x.amount,0)/n,out=fixed+tax+rest;
-  return `<div class="card"><h2>תזרים · 30 הימים הקרובים</h2><p class="cap">הערכה לפי היומן, הכרטיסיות וממוצע ההוצאות ב${full.map(mLabel).join(' ו')||'—'}</p>
-   <div class="alerts"><div class="alert"><span>צפוי להיכנס</span><b class="num" style="margin-inline-start:auto">${ils(inn)}</b></div>
-   <div class="alert"><span>קבועות (שכירות, הלוואה, ביטוח, פנסיה, ועד…)</span><b class="num" style="margin-inline-start:auto">${ils(fixed)}</b></div>
-   <div class="alert"><span>מיסים (ממוצע)</span><b class="num" style="margin-inline-start:auto">${ils(tax)}</b></div>
-   <div class="alert"><span>שוטפות (סופר, רכב, פארם…)</span><b class="num" style="margin-inline-start:auto">${ils(rest)}</b></div>
-   <div class="alert" style="font-weight:700"><span>צפוי להישאר</span><b class="num" style="margin-inline-start:auto;color:${inn-out<0?'var(--bad)':'inherit'}">${ils(inn-out)}</b></div></div></div>`}
-
-/* ---------- 1. income by calendar: the sessions Tal actually did ---------- */
-const done=s=>charged(s); // Tal: what is in the calendar and already happened is charged (incl. no-show)
-const manualSet=(cid,k)=>{const r=S.months.find(m=>m.client_id===cid&&m.month===k);return r?!!r.settled:undefined};
-const paidPool=pid=>{const mem=membersOf(pid).map(x=>x.id);return S.payments.filter(p=>mem.includes(p.client_id)&&p.category==='trainee'&&p.for_period!=='before').reduce((t,p)=>t+ +p.amount,0)};
-/* money that came in (bank/paybox/cash) covers what is owed, oldest first. A manual click always wins. */
+  const mk=mKey(now),FIXED_M=[['שכר דירה',9700],['הלוואה',2009],['ועד בית',1987],['ביטוחים',1400],['פנסיה',1000],['רואה חשבון',443],['מנויים',167]],TAX_M=5544;
+  const inc=S.sessions.filter(s=>charged(s)&&s.status!=='cancelled'&&mKey(s.start_at)===mk).reduce((t,s)=>t+(+s.price||0),0);
+  const fx=FIXED_M.reduce((t,x)=>t+x[1],0),ceil=inc-fx-TAX_M;
+  const V=S.expenses.filter(x=>mKey(x.spent_at)===mk&&!FIXED.includes(x.category)&&x.category!=='מיסים'&&x.category!==GREECE&&x.method!=='כרטיס 1576'&&!/^(SUPABASE|NETLIFY)/.test(x.vendor||''));
+  const vs=V.reduce((t,x)=>t+ +x.amount,0),byC={};V.forEach(x=>{const k=x.category||'אחר';byC[k]=(byC[k]||0)+ +x.amount});
+  const row=(a,b,st='')=>`<div class="alert" style="${st}"><span>${a}</span><b class="num" style="margin-inline-start:auto">${b}</b></div>`;
+  const left=ceil-vs,res=inc-fx-TAX_M-vs;
+  return `<div class="card"><h2>תזרים · ${mLabel(mk)}</h2><p class="cap">הכנסות לפי האימונים ביומן החודש · קבועות ומיסים לפי חודש רגיל · בלי הכרטיס של שי</p>
+   <div class="alerts">${row('הכנסות החודש (יומן)',ils(inc))}
+   <details><summary class="alert" style="cursor:pointer"><span>קבועות</span><b class="num" style="margin-inline-start:auto">−${ils(fx)}</b></summary>${FIXED_M.map(x=>row('· '+x[0],ils(x[1]),'opacity:.8;font-size:13px')).join('')}</details>
+   ${row('מיסים (חלק חודשי)','−'+ils(TAX_M))}
+   ${row('תקרה לשוטפות',ils(ceil),'font-weight:700')}
+   <details><summary class="alert" style="cursor:pointer"><span>שוטפות עד היום</span><b class="num" style="margin-inline-start:auto">−${ils(vs)}</b></summary>${Object.entries(byC).sort((a,b)=>b[1]-a[1]).map(([k,v])=>row('· '+k,ils(v),'opacity:.8;font-size:13px')).join('')}</details>
+   ${row('נשאר עד התקרה',ils(left),'color:'+(left<0?'var(--bad)':'inherit'))}
+   ${row('צפוי להישאר בסוף החודש',ils(res),'font-weight:700;color:'+(res<0?'var(--bad)':'inherit'))}</div>
+   <p class="cap" style="margin-top:8px">החודש הבא מחושב לפי החודש הזה. מיסים בפועל יורדים פעם בחודשיים.</p></div>`}
 function allocate(pid,items){let pool=paidPool(pid);for(const it of items){const m=manualSet(pid,it.key);
   if(m===true){it.paid=true;pool=Math.max(0,pool-it.need)}else if(m===false){it.paid=false}
   else if(it.need>0&&pool>=it.need-0.5){it.paid=true;it.auto=true;pool-=it.need}else it.paid=false}return items}
